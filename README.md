@@ -10,7 +10,7 @@ Deutschsprachiges Foto-Partyspiel für 2–8 Personen. Statische React/TypeScrip
 4. Sobald mindestens zwei Personen in der Lobby sind, startet der Host die Runde. Prompt lesen, Foto wählen, anonym abstimmen. Gewinner bekommt einen Punkt.
 5. Der Code gilt für die gesamte Partie. Die Browser-Tabs bleiben während der Partie geöffnet.
 
-Die Musik startet nach der Interaktion zum Erstellen oder Beitreten. 🎵 schaltet nur die Musik um, 🔊/🔇 schaltet sämtliche Sounds stumm. Musik und Effekte werden lokal mit der Web Audio API erzeugt; es gibt keine externen Sounddateien oder Lizenzabhängigkeiten.
+Die selbst gehostete Schrift Fredoka ist als Fontsource-Paket eingebunden; beim Spielen wird kein externer Font-Dienst angefragt. Die Musik startet nach der Interaktion zum Erstellen oder Beitreten. 🎵 schaltet nur die Musik um, 🔊/🔇 schaltet sämtliche Sounds stumm. Musik und Effekte werden lokal mit der Web Audio API erzeugt; es gibt keine externen Sounddateien oder Lizenzabhängigkeiten.
 
 ## Lokale Entwicklung
 
