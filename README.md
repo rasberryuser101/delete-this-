@@ -1,16 +1,16 @@
 # Delete This! 📸
 
-Ein deutschsprachiges Foto-Partyspiel für 2–8 Personen. Statische React/TypeScript/Vite-Webapp ohne Backend und ohne Accounts. Die Fotos werden lokal per Canvas auf höchstens 1280 px Kantenlänge und höchstens 450 KB verarbeitet; Metadaten des Originals werden nicht übertragen. Spielbilder liegen nur im RAM und gehen direkt über WebRTC-Datenkanäle zwischen den Geräten. Nach der Runde werden die Object URLs freigegeben.
+Deutschsprachiges Foto-Partyspiel für 2–8 Personen. Statische React/TypeScript/Vite-Webapp ohne eigenen Server, Datenbank oder Account. Der kurze Lobbycode wird über den **kostenlosen öffentlichen PeerJS-Cloud-Signaling-Dienst** vermittelt. Fotos werden lokal verarbeitet und ausschließlich über direkte WebRTC-Datenkanäle zwischen den Spielgeräten übertragen. PeerJS Cloud ist ein externer Dienst für Verbindungsdaten und bekommt von der App keine Fotos.
 
-## Direkt losspielen
+## Spielen
 
-1. Eine Person öffnet **Spiel erstellen** und wählt Party Mode (Fotos nur beim Host) oder Remote Mode (Fotos auf allen Geräten).
-2. Der Host wählt **Mit Freund verbinden**. Der Gast scannt den Einladungs-QR-Code mit der Kamera (der Link öffnet die Webapp) oder fügt den Code in **Mitspielen** ein.
-3. Der Gast sieht einen **Antwort-QR-Code**. Der Host scannt ihn in der Webapp oder fügt den Antwortcode ein und tippt auf **Verbindung herstellen**.
-4. Für weitere Gäste Schritte 2–3 wiederholen. **Das Pairing ist pro Gerät nur einmal nötig**, nicht für jede Runde.
-5. Ab zwei verbundenen Personen startet der Host die Runde. Alle wählen ein Foto, stimmen über die anonymen Bilder ab und erhalten Punkte.
+1. Website öffnen, Namen eingeben und **Spiel erstellen** drücken.
+2. **Party Mode** zeigt Fotos nur beim Host; **Remote Mode** verteilt sie per WebRTC an alle.
+3. Der Host zeigt einen sechsstelligen Lobbycode oder teilt den Einladungslink. Freunde geben den Code ein und drücken **Beitreten**. Kein QR-Code, keine Answer, kein Rückscan.
+4. Sobald mindestens zwei Personen in der Lobby sind, startet der Host die Runde. Prompt lesen, Foto wählen, anonym abstimmen. Gewinner bekommt einen Punkt.
+5. Der Code gilt für die gesamte Partie. Die Browser-Tabs bleiben während der Partie geöffnet.
 
-Die Spielansicht und der Browser-Tab müssen während der Partie offen bleiben. Der Host sollte eine stabile Verbindung und für Party Mode einen gemeinsam sichtbaren Bildschirm haben. Es gibt keinen zufälligen Matchmaking-Dienst. In manchen Netzwerken, besonders bei restriktiven Mobilfunk- oder Firmennetzen, verhindert NAT eine direkte P2P-Verbindung; ohne TURN ist dort Spielen nicht möglich.
+Die Musik startet nach der Interaktion zum Erstellen oder Beitreten. 🎵 schaltet nur die Musik um, 🔊/🔇 schaltet sämtliche Sounds stumm. Musik und Effekte werden lokal mit der Web Audio API erzeugt; es gibt keine externen Sounddateien oder Lizenzabhängigkeiten.
 
 ## Lokale Entwicklung
 
@@ -19,38 +19,34 @@ npm install
 npm run dev
 ```
 
-## Prüfungen und statischer Build
-
 ```sh
 npm test
 npm run typecheck
 npm run build
 ```
 
-`dist/` enthält ausschließlich statische Dateien. Keine Environment Secrets oder weiteren Dienste nötig. Die Anwendung verwendet Hash-Routen (`#/spiel`, `#/datenschutz`, `#/info`), damit die Navigation auch ohne Server-Routing auf GitHub Pages funktioniert. `robots.txt` und das Robots-Meta-Tag untersagen die Indexierung der privaten Testversion. Sie sind keine Zugangssperre.
+`dist/` enthält ausschließlich statische Dateien. Es gibt keine Environment Secrets. Die Hash-Routen `#/spiel`, `#/datenschutz` und `#/info` funktionieren auch auf statischen Hosts ohne spezielle Rewrite-Regeln. `robots.txt` und das Robots-Meta-Tag verhindern gewöhnliche Suchmaschinenindexierung, sind aber keine Zugangssperre.
 
 ## Vercel Deployment
 
-1. Repository auf GitHub erstellen und Projektdateien pushen.
+1. Das bestehende Repository `rasberryuser101/delete-this-` auf GitHub öffnen.
 2. [Vercel](https://vercel.com) öffnen.
-3. **Add New → Project** wählen und das GitHub-Repository importieren.
+3. **Add New → Project** und das Repository importieren.
 4. **Framework Preset:** Vite.
 5. **Build Command:** `npm run build`.
 6. **Output Directory:** `dist`.
-7. **Deploy** klicken und den Link teilen.
+7. **Deploy** klicken und die URL teilen.
 
-Die Datei `vercel.json` enthält die nötige statische Konfiguration. Vercel benötigt keine Secrets. Für Netlify oder GitHub Pages reicht ebenfalls der Inhalt von `dist/` als statische Website (bei GitHub Pages die Vite-Basis für das Repository-Unterverzeichnis entsprechend konfigurieren oder eine benutzerdefinierte Domain verwenden).
+`vercel.json` enthält die statische Build-Konfiguration. Netlify oder GitHub Pages können dieselben Builddateien hosten. Auf GitHub Pages funktioniert `base: './'` mit den Hash-Routen im Projektunterverzeichnis.
 
-## Technik und Datenschutz
+## Technik und Privatsphäre
 
-- WebRTC mit manuellen komprimierten SDP Offer/Answer Codes, einschließlich ICE-Kandidaten, ohne Signaling-Server.
-- Standard-STUN: `stun:stun.l.google.com:19302`, in der Host-Lobby änderbar. STUN sieht Verbindungsdaten wie IP-Adressen, keine Fotos. Kein TURN und kein Server-Fallback.
-- Host-zentrierte Sternstruktur. Host und bis zu sieben Gäste. Host verteilt Fotos in Remote Mode per DataChannel an jeden Gast.
-- Alle Fotos werden aus der ausgewählten Originaldatei per Canvas neu encodiert, auf maximal 450 KB begrenzt, als WebP/JPEG in 16-KB-Stücken über verschlüsselte WebRTC-Datenkanäle geschickt. Originaldateien werden nie übertragen.
-- Aufgenommene Fotos werden nicht über `fetch`, HTTP, Uploads oder APIs versendet. Sie werden nicht in `localStorage`, IndexedDB, Service Worker, Logs oder Datenbanken gespeichert. Nur der Anzeigename liegt im `localStorage`.
-- Keine Analytics, Cloud-Dienste, Bildspeicherung, KI-APIs oder eigenen Server.
-- Ein öffentlicher Host kann trotzdem vom Hostinganbieter technische Abrufdaten erfassen. Für reale öffentliche Nutzung die Datenschutzhinweise des gewählten Hosters und STUN-Anbieters prüfen.
+- PeerJS Cloud (`0.peerjs.com`) vermittelt kurzzeitig Peer-IDs, SDP und ICE-Kandidaten, damit ein sechsstelliger Lobbycode ohne eigenes Backend funktioniert. Der Dienst kann technische Verbindungsdaten wie IP-Adressen sehen. Das Spiel hängt von seiner Verfügbarkeit ab.
+- Ein konfigurierbarer öffentlicher STUN-Server ist in `src/room.ts` voreingestellt (`stun:stun.l.google.com:19302`). Der Host bildet mit bis zu sieben Gästen eine Sternstruktur. **Kein TURN**: Falls direkte Verbindungen in einem Netzwerk unmöglich sind, erscheint eine Fehlermeldung und Fotos werden nicht über einen Server geleitet.
+- Originalfotos werden lokal per Canvas neu encodiert, höchstens 1280 px Kantenlänge und 450 KB. EXIF/GPS der Originaldatei werden nicht übernommen. Nur die neu erzeugten WebP/JPEG-Blobs werden in 16-KB-Stücken über verschlüsselte RTCDataChannels geschickt.
+- Keine Foto-Uploads über HTTP, keine Fotos im `localStorage`, IndexedDB, Service Worker Cache, in Logs oder Cloud Storage. Bilder liegen nur temporär im RAM. Bei Rundenende oder Verlassen werden Object URLs freigegeben. Nur der Anzeigename wird lokal gespeichert.
+- Keine Analytics, kein Tracking, keine KI-APIs. Der Hostinganbieter empfängt beim Seitenaufruf technisch notwendige Verbindungsdaten.
 
 ## Grenzen
 
-Ein gemeinsamer Bildtransfer kann bei schlechter P2P-Verbindung dauern. Ohne TURN ist eine Verbindung nicht garantiert. Das Spiel hat keinen Raumcode, der allein zum Beitreten reicht: Für das direkte P2P-Pairing muss der Host jede Antwort einmal übernehmen. In Party Mode müssen Gäste die nummerierten Bilder auf dem Host-Bildschirm sehen können. Bei Tab-Schließung oder Reload geht die Partie verloren; es gibt absichtlich keine Speicherung oder Wiederaufnahme.
+Ein sechsstelliger Code ist eine Einladung an Freunde, keine starke Zugangssperre. Wer den Code errät, kann während der Lobby versuchen beizutreten. Der Host sollte nur mit bekannten Personen spielen. Ohne TURN klappt WebRTC in restriktiven Mobilfunk- und Firmennetzen manchmal nicht. Wenn PeerJS Cloud ausfällt, können keine neuen Lobbys oder Verbindungen hergestellt werden; bereits laufende P2P-Verbindungen bleiben normalerweise aktiv. Bei Tab-Schließung oder Reload geht die Partie verloren: Es gibt absichtlich keine Speicherung oder Wiederaufnahme.

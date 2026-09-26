@@ -11,14 +11,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "fflate": "^0.8.2",
-    "jsqr": "^1.4.0",
-    "qrcode": "^1.5.4",
+    "peerjs": "^1.5.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",

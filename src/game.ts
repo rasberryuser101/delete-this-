@@ -52,3 +52,12 @@ export function disconnectPlayer(game: Game, id: string, random = Math.random): 
   }
   return next;
 }
+
+/** Gastansicht: Bis zum Ergebnis lassen sich fremde Fotos keinem Namen zuordnen. */
+export function viewFor(game: Game, viewerId: string): Game {
+  return {
+    ...game,
+    photos: game.photos.map(photo => ({...photo, ownerId: photo.ownerId === viewerId ? viewerId : 'hidden'})),
+    votes: Object.fromEntries(Object.keys(game.votes).map(id => [id, 'cast']))
+  };
+}

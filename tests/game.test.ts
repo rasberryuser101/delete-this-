@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, reveal, submitPhoto } from '../src/game';
+import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, reveal, submitPhoto, viewFor } from '../src/game';
 import { CATEGORIES, PROMPTS, pickPrompt } from '../src/prompts';
 function start() { let g = createGame('Host','party'); g = joinPlayer(g,{id:'guest',name:'Gast',score:0,connected:true}); return nextRound(g,['Chaos'],[],()=>0); }
 describe('Spielablauf', () => {
@@ -30,6 +30,12 @@ describe('Spielablauf', () => {
     expect(()=>castVote(g,'stranger','b')).toThrow();
     expect(()=>castVote(g,'host','missing')).toThrow();
   });
+});
+it('blendet die Eigentümer fremder Fotos und die Stimmziele für Gäste aus',()=>{
+  let g=start(); g=reveal(submitPhoto(submitPhoto(g,'host','a'),'guest','b')); g=castVote(g,'host','b');
+  const guest=viewFor(g,'guest'); expect(guest.photos.find(p=>p.id==='a')?.ownerId).toBe('hidden');
+  expect(guest.photos.find(p=>p.id==='b')?.ownerId).toBe('guest');
+  expect(guest.votes).toEqual({host:'cast'});
 });
 describe('Prompts',()=>{
   it('hat mindestens 500 einzigartige deutsche Prompts und alle Kategorien',()=>{
