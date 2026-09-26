@@ -5,7 +5,7 @@ import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextR
 import { processImage } from './image';
 import { PhotoStore } from './photoStore';
 import { decodeMessage, ImageReceiver, sendImage, sendMessage } from './protocol';
-import { CONNECTION_ERROR, SIGNALING_ERROR, makeRoomCode, normalizeRoomCode, peerIdFor, peerOptions, roomLink } from './room';
+import { CONNECTION_ERROR, SIGNALING_ERROR, connectToRoom, makeRoomCode, normalizeRoomCode, peerIdFor, peerOptions, roomLink } from './room';
 import { isMuted, isMusicEnabled, play, setMuted, setMusicEnabled, startMusic, stopMusic } from './sound';
 import './style.css';
 
@@ -162,7 +162,7 @@ function App() {
     const signaling=new PeerJS(peerOptions()); peerRef.current=signaling;
     try {
       await waitSignaling(signaling);
-      const conn=signaling.connect(peerIdFor(code),{serialization:'none'});
+      const conn=connectToRoom(signaling,code);
       const connected: ConnectedPeer={conn,receiver:new ImageReceiver()};
       await new Promise<void>((resolve,reject)=>{
         const timer=window.setTimeout(()=>reject(new Error(CONNECTION_ERROR)),30000);

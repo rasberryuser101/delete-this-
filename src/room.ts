@@ -1,4 +1,4 @@
-import type { PeerOptions } from 'peerjs';
+import { SerializationType, type Peer, type PeerOptions, type DataConnection } from 'peerjs';
 export const CONNECTION_ERROR = 'Direkte Verbindung konnte in diesem Netzwerk leider nicht hergestellt werden.';
 export const SIGNALING_ERROR = 'Der Lobby-Dienst ist gerade nicht erreichbar. Bitte später erneut versuchen.';
 export const DEFAULT_STUN = 'stun:stun.l.google.com:19302';
@@ -25,4 +25,9 @@ export function peerOptions(stun = DEFAULT_STUN): PeerOptions {
 }
 export function roomLink(code: string, location: Pick<Location,'origin'|'pathname'>): string {
   return `${location.origin}${location.pathname}#/spiel?code=${normalizeRoomCode(code)}`;
+}
+
+/** PeerJS nennt das dokumentierte `none`-Format intern `raw`. */
+export function connectToRoom(peer: Pick<Peer, 'connect'>, code: string): DataConnection {
+  return peer.connect(peerIdFor(code), {serialization: SerializationType.None});
 }
