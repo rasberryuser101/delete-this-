@@ -1,6 +1,6 @@
 # Delete This! 📸
 
-Deutschsprachiges Foto-Partyspiel für 2–8 Personen. Statische React/TypeScript/Vite-Webapp ohne eigenen Server, Datenbank oder Account. Der kurze Lobbycode wird über **mehrere öffentliche Nostr-Relays** vermittelt. Trystero verschlüsselt die WebRTC-Verbindungsdaten und nutzt acht Relays redundant, statt von einem einzelnen kostenlosen Signaling-Dienst abhängig zu sein. Fotos werden lokal verarbeitet und ausschließlich über WebRTC-Datenkanäle zwischen den Spielgeräten übertragen. Die Vermittlungsdienste bekommen von der App keine Fotos.
+Deutschsprachiges Foto-Partyspiel für 2–8 Personen. Statische React/TypeScript/Vite-Webapp ohne eigenen Server, Datenbank oder Account. Der kurze Lobbycode wird über **mehrere öffentliche MQTT-over-WSS-Broker** vermittelt. Trystero verschlüsselt die WebRTC-Verbindungsdaten und nutzt fünf Broker redundant, statt von einem einzelnen kostenlosen Signaling-Dienst abhängig zu sein. Fotos werden lokal verarbeitet und ausschließlich über WebRTC-Datenkanäle zwischen den Spielgeräten übertragen. Die Vermittlungsdienste bekommen von der App keine Fotos.
 
 ## Spielen
 
@@ -41,7 +41,7 @@ npm run build
 
 ## Technik und Privatsphäre
 
-- Trystero nutzt acht öffentliche Nostr-Relays redundant zur Peer-Erkennung. Die darüber ausgetauschten WebRTC-Verbindungsdaten sind mit einem aus App-ID und Lobbycode abgeleiteten Schlüssel verschlüsselt. Relays können technische Verbindungsdaten sehen, erhalten aber keine Fotos oder Spielinhalte. Es gibt weiterhin keine Datenbank und keinen eigenen Signaling-Server.
+- Trystero nutzt fünf öffentliche MQTT-over-WSS-Broker redundant zur Peer-Erkennung. Die darüber ausgetauschten WebRTC-Verbindungsdaten sind mit einem aus App-ID und Lobbycode abgeleiteten Schlüssel verschlüsselt. Broker können technische Verbindungsdaten sehen, erhalten aber keine Fotos oder Spielinhalte. Es gibt weiterhin keine Datenbank und keinen eigenen Signaling-Server.
 - Mehrere öffentliche STUN-Endpunkte von Google, Cloudflare und Twilio sind in `src/room.ts` konfiguriert. Über einen Rollen-Handshake akzeptiert der Host nur Gäste und Gäste nur den Host; die Spieldaten bleiben hostzentriert. **Kein TURN**: Falls direkte Verbindungen in einem Netzwerk unmöglich sind, erscheint eine Fehlermeldung und Fotos werden nicht über einen Server geleitet.
 - Originalfotos werden lokal per Canvas neu encodiert, höchstens 1280 px Kantenlänge und 450 KB. EXIF/GPS der Originaldatei werden nicht übernommen. Nur die neu erzeugten WebP/JPEG-Blobs werden über verschlüsselte RTCDataChannels geschickt; Trystero übernimmt Chunking und Flusskontrolle.
 - Keine Foto-Uploads über HTTP, keine Fotos im `localStorage`, IndexedDB, Service Worker Cache, in Logs oder Cloud Storage. Bilder liegen nur temporär im RAM. Bei Rundenende oder Verlassen werden Object URLs freigegeben. Nur der Anzeigename wird lokal gespeichert.
@@ -49,4 +49,4 @@ npm run build
 
 ## Grenzen
 
-Ein sechsstelliger Code ist eine Einladung an Freunde, keine starke Zugangssperre. Wer den Code errät, kann während der Lobby versuchen beizutreten. Der Host sollte nur mit bekannten Personen spielen. Ohne TURN klappt WebRTC in restriktiven Mobilfunk- und Firmennetzen manchmal nicht. Fällt ein einzelnes Nostr-Relay aus, stehen weitere Relays bereit; bei einem breiten Ausfall öffentlicher Relays können neue Verbindungen trotzdem scheitern. Bei Tab-Schließung oder Reload geht die Partie verloren: Es gibt absichtlich keine Speicherung oder Wiederaufnahme.
+Ein sechsstelliger Code ist eine Einladung an Freunde, keine starke Zugangssperre. Wer den Code errät, kann während der Lobby versuchen beizutreten. Der Host sollte nur mit bekannten Personen spielen. Ohne TURN klappt WebRTC in restriktiven Mobilfunk- und Firmennetzen manchmal nicht. Fällt ein einzelner MQTT-Broker aus, stehen weitere Broker bereit; bei einem breiten Ausfall öffentlicher Broker können neue Verbindungen trotzdem scheitern. Bei Tab-Schließung oder Reload geht die Partie verloren: Es gibt absichtlich keine Speicherung oder Wiederaufnahme.

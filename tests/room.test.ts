@@ -1,5 +1,5 @@
 import { describe,expect,it } from 'vitest';
-import { lobbyConfig,makeRoomCode,normalizeRoomCode,parseHandshake,parsePhotoMetadata,roomLink,STUN_SERVERS } from '../src/room';
+import { JOIN_TIMEOUT_MS,lobbyConfig,makeRoomCode,normalizeRoomCode,parseHandshake,parsePhotoMetadata,roomLink,STUN_SERVERS } from '../src/room';
 describe('Lobbycodes',()=>{
   it('erzeugt kurze, eindeutige und gut lesbare Codes',()=>{
     const code=makeRoomCode(new Uint8Array([0,1,2,3,4,5]));
@@ -25,5 +25,6 @@ describe('Lobbycodes',()=>{
     expect(config.rtcConfig.iceServers).toEqual(STUN_SERVERS);
     expect(JSON.stringify(config.rtcConfig.iceServers)).not.toContain('turn:');
     expect(config.password).toContain('ABCDEF');
+    expect(JOIN_TIMEOUT_MS).toBeLessThanOrEqual(20_000);
   });
 });

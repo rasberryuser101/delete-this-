@@ -1,8 +1,10 @@
-import { joinRoom, type JsonValue, type MessageAction, type Room } from 'trystero';
+import { joinRoom } from '@trystero-p2p/mqtt';
+import type { JsonValue, MessageAction, Room } from '@trystero-p2p/core';
 
 export const CONNECTION_ERROR = 'Die Lobby-Verbindung konnte nicht hergestellt werden. Bitte Code prüfen und erneut versuchen.';
 export const NETWORK_ERROR = 'Dieses Netzwerk blockiert leider direkte WebRTC-Verbindungen.';
 export const APP_ID = 'at.delete-this.party.v2';
+export const JOIN_TIMEOUT_MS = 20_000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 export const STUN_SERVERS: RTCIceServer[] = [
@@ -56,7 +58,9 @@ export function lobbyConfig(code: string) {
   return {
     appId: APP_ID,
     password: `delete-this:${normalized}`,
-    relayConfig: {redundancy: 8, warnOnRelayFailure: false},
+    // Alle fuenf von Trystero gepflegten, oeffentlichen MQTT-over-WSS-Broker
+    // werden parallel genutzt. Sie vermitteln nur verschluesselte WebRTC-SDPs.
+    relayConfig: {redundancy: 5, warnOnRelayFailure: false},
     rtcConfig: {iceServers: STUN_SERVERS, iceCandidatePoolSize: 4},
     trickleIce: true
   };
@@ -75,7 +79,7 @@ export function createLobbySession(options: {
     : {version: 1, role: 'host'};
   if (!parseHandshake(mine)) throw new Error('Ungültige Spielerdaten.');
   const room = joinRoom(lobbyConfig(code), code, {
-    handshakeTimeoutMs: 20_000,
+    handshakeTimeoutMs: 12_000,
     onJoinError: ({peerId,error}) => options.onJoinError?.(peerId,error),
     onPeerHandshake: async (peerId,send,receive) => {
       await send(mine);
