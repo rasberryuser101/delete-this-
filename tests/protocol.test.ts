@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decodeMessage, encodeMessage, validateMessage } from '../src/protocol';
 import { isSafeImage, MAX_EDGE, MAX_IMAGE_BYTES } from '../src/image';
+import { createGame } from '../src/game';
 describe('Bildgrenzen und Nachrichten',()=>{
   it('begrenzt die Kante und die zu übertragenden Bytes',()=>{
     expect(MAX_EDGE).toBe(1280); expect(MAX_IMAGE_BYTES).toBeLessThanOrEqual(450_000);
@@ -17,5 +18,13 @@ describe('Bildgrenzen und Nachrichten',()=>{
   it('serialisiert nur validierte Kontrollnachrichten',()=>{
     const encoded=encodeMessage({type:'vote',photoId:'foto',roundId:'runde'});
     expect(decodeMessage(encoded)).toEqual({type:'vote',photoId:'foto',roundId:'runde'});
+  });
+  it('verwirft manipulierte Reveal-Indizes und fremde Reaktionswerte',()=>{
+    const game=createGame('Host','party');
+    expect(validateMessage({type:'sync',you:'host',game})).not.toBeNull();
+    expect(validateMessage({type:'sync',you:'host',game:{...game,revealIndex:8}})).toBeNull();
+    expect(validateMessage({type:'sync',you:'host',game:{...game,revealIndex:-2}})).toBeNull();
+    expect(validateMessage({type:'reaction',emoji:'😂',roundId:'round'})).not.toBeNull();
+    expect(validateMessage({type:'reaction',emoji:'<script>alert(1)</script>',roundId:'round'})).toBeNull();
   });
 });

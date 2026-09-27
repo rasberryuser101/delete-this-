@@ -13,9 +13,9 @@ describe('Lobbycodes',()=>{
     expect(()=>normalizeRoomCode('111111')).toThrow();
   });
   it('prüft Rollen und Bild-Metadaten vor der WebRTC-Verarbeitung',()=>{
-    expect(parseHandshake({version:3,role:'guest',name:'Chris'})).toEqual({version:3,role:'guest',name:'Chris'});
-    expect(parseHandshake({version:3,role:'guest',name:''})).toBeNull();
-    expect(parseHandshake({version:3,role:'admin',name:'Chris'})).toBeNull();
+    expect(parseHandshake({version:4,role:'guest',name:'Chris'})).toEqual({version:4,role:'guest',name:'Chris'});
+    expect(parseHandshake({version:4,role:'guest',name:''})).toBeNull();
+    expect(parseHandshake({version:4,role:'admin',name:'Chris'})).toBeNull();
     expect(parsePhotoMetadata({version:2,id:'foto',roundId:'runde',bytes:400_000,mime:'image/jpeg'})).not.toBeNull();
     expect(parsePhotoMetadata({version:2,id:'foto',roundId:'runde',bytes:500_000,mime:'image/jpeg'})).toBeNull();
     expect(parsePhotoMetadata({version:2,id:'<script>',roundId:'runde',bytes:10,mime:'image/jpeg'})).toBeNull();
@@ -23,7 +23,7 @@ describe('Lobbycodes',()=>{
   it('nutzt redundante Vermittlung und optionale, validierte TURN-Daten',()=>{
     const turn=parseTurnConfig('{"urls":["turns:relay.example:443?transport=tcp"],"username":"temporary","credential":"short-lived"}');
     const config=lobbyConfig('ABCDEFGH23',turn);
-    expect(config.relayConfig.redundancy).toBeGreaterThanOrEqual(5);
+    expect(config.relayConfig.redundancy).toBe(2);
     expect(config.rtcConfig.iceServers).toEqual([...STUN_SERVERS,...turn]);
     expect(lobbyConfig('ABCDEFGH23').rtcConfig.iceServers).toEqual(STUN_SERVERS);
     expect(parseTurnConfig('')).toEqual([]);

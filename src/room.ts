@@ -3,15 +3,16 @@ import type { RequestAction, Room } from '@trystero-p2p/core';
 import { APPROVAL_MS } from './admission';
 import type { PhotoAction, PhotoAck } from './transfer';
 export { parsePhotoMetadata } from './transfer';
-export const BUILD = '3.1 · Optionaler TURN-Fallback';
-export const CONNECTION_ERROR = 'Lobby nicht gefunden. Beide Geräte müssen Version 3 verwenden und dieselbe neue Einladung öffnen.';
-export const NETWORK_ERROR = 'Die WebRTC-Verbindung konnte leider nicht hergestellt werden. In getrennten Netzen bitte TURN-Zugang auf beiden Geräten eintragen und erneut versuchen.';
-export const APP_ID = 'at.delete-this.party.v3';
+export const BUILD = '4.0 · Die Galerie steht vor Gericht';
+export const CONNECTION_ERROR = 'Lobby nicht gefunden. Beide Seiten neu laden, beim Host eine neue Lobby erstellen und denselben neuen Code verwenden.';
+export const NETWORK_ERROR = 'Direkte Verbindung nicht möglich. Testet beide Geräte im selben WLAN. Manche Netze benötigen eine Netzwerkbrücke (TURN); sie ist hier nicht automatisch eingerichtet.';
+export const APP_ID = 'at.delete-this.party.v4';
+export const RELAY_URLS = ['wss://test.mosquitto.org:8081/mqtt','wss://broker.hivemq.com:8884/mqtt'];
 export const JOIN_TIMEOUT_MS = 30_000;
 export const STUN_SERVERS: RTCIceServer[] = [{urls:'stun:stun.l.google.com:19302'}, {urls:'stun:stun.cloudflare.com:3478'}];
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export type LobbyRole = 'host' | 'guest';
-export type LobbyHandshake = {version: 3; role: LobbyRole; name?: string};
+export type LobbyHandshake = {version: 4; role: LobbyRole; name?: string};
 export type LobbySession = {room: Room; selfId: string; control: RequestAction<string, {ok:true}>; photo: PhotoAction; relayCount: () => number};
 export type LobbyOptions = {code: string; role: LobbyRole; name?: string; turnServers?: RTCIceServer[]; authorize?: (id: string, remote: LobbyHandshake) => void | Promise<void>; onStage?: (stage: 'approval', id: string) => void; onJoinError?: (id: string, error: string) => void};
 export function makeRoomCode(bytes = crypto.getRandomValues(new Uint8Array(10))): string {
@@ -32,7 +33,7 @@ export const roomLink = (code: string, location: Pick<Location,'origin'|'pathnam
 export function parseHandshake(value: unknown): LobbyHandshake | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string,unknown>;
-  if (v.version !== 3 || !['host','guest'].includes(v.role as string) || (v.role === 'guest' && (typeof v.name !== 'string' || !v.name.trim() || v.name.length > 24))) return null;
+  if (v.version !== 4 || !['host','guest'].includes(v.role as string) || (v.role === 'guest' && (typeof v.name !== 'string' || !v.name.trim() || v.name.length > 24))) return null;
   return v as LobbyHandshake;
 }
 /** Optional session-only TURN configuration. Never persist or print credentials. */
@@ -53,11 +54,11 @@ export function parseTurnConfig(input: string): RTCIceServer[] {
   } catch {throw new Error('TURN-Daten ungültig. Bitte JSON mit urls, username und credential vom TURN-Anbieter einfügen.');}
 }
 export function lobbyConfig(code: string, turnServers: RTCIceServer[] = []) {
-  return {appId:APP_ID, password:`delete-this:${normalizeRoomCode(code)}`, relayConfig:{redundancy:5, warnOnRelayFailure:false}, rtcConfig:{iceServers:[...STUN_SERVERS,...turnServers]}, trickleIce:true};
+  return {appId:APP_ID, password:`delete-this:${normalizeRoomCode(code)}`, relayConfig:{urls:RELAY_URLS,redundancy:RELAY_URLS.length, warnOnRelayFailure:false}, rtcConfig:{iceServers:[...STUN_SERVERS,...turnServers]}, trickleIce:true};
 }
 export async function createLobbySession(options: LobbyOptions): Promise<LobbySession> {
   if (!globalThis.isSecureContext || typeof RTCPeerConnection === 'undefined') throw new Error('WebRTC ist hier nicht verfügbar. Bitte die HTTPS-Seite in Safari oder Chrome öffnen.');
-  const mine: LobbyHandshake = {version:3, role:options.role, ...(options.role==='guest' ? {name:options.name?.trim()} : {})};
+  const mine: LobbyHandshake = {version:4, role:options.role, ...(options.role==='guest' ? {name:options.name?.trim()} : {})};
   if (!parseHandshake(mine)) throw new Error('Bitte einen Namen eingeben.');
   const room = joinRoom(lobbyConfig(options.code,options.turnServers), normalizeRoomCode(options.code), {
     handshakeTimeoutMs: APPROVAL_MS + 15_000,

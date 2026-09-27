@@ -1,10 +1,10 @@
 import { pickPrompt, type Category } from './prompts';
 export type Mode = 'party' | 'remote';
-export type Phase = 'lobby' | 'submit' | 'vote' | 'result';
+export type Phase = 'lobby' | 'submit' | 'reveal' | 'vote' | 'result';
 export interface Player { id: string; name: string; score: number; connected: boolean }
 export interface Photo { id: string; ownerId: string }
-export interface Game { phase: Phase; mode: Mode; round: number; roundId: string; prompt: string; category: Category | null; players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null }
-export const createGame = (hostName: string, mode: Mode): Game => ({phase: 'lobby', mode, round: 0, roundId: '', prompt: '', category: null, players: [{id: 'host', name: hostName, score: 0, connected: true}], photos: [], votes: {}, winnerId: null});
+export interface Game { phase: Phase; mode: Mode; round: number; roundId: string; prompt: string; category: Category | null; players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null; revealIndex: number }
+export const createGame = (hostName: string, mode: Mode): Game => ({phase: 'lobby', mode, round: 0, roundId: '', prompt: '', category: null, players: [{id: 'host', name: hostName, score: 0, connected: true}], photos: [], votes: {}, winnerId: null, revealIndex:-1});
 export function joinPlayer(game: Game, player: Player): Game {
   if (game.phase !== 'lobby' || game.players.length >= 8 || game.players.some(p => p.id === player.id)) throw new Error('Beitritt nur in der Lobby mit maximal 8 Personen.');
   return {...game, players: [...game.players, player]};
@@ -12,7 +12,7 @@ export function joinPlayer(game: Game, player: Player): Game {
 export function nextRound(game: Game, categories: Category[], used: string[], random = Math.random): Game {
   if (!['lobby', 'result'].includes(game.phase) || game.players.filter(p => p.connected).length < 2) throw new Error('Es braucht mindestens zwei verbundene Spieler.');
   const selected = pickPrompt(categories, used, random);
-  return {...game, phase: 'submit', round: game.round + 1, roundId: crypto.randomUUID(), prompt: selected.text, category: selected.category, photos: [], votes: {}, winnerId: null};
+  return {...game, phase: 'submit', round: game.round + 1, roundId: crypto.randomUUID(), prompt: selected.text, category: selected.category, photos: [], votes: {}, winnerId: null, revealIndex:-1};
 }
 export function submitPhoto(game: Game, ownerId: string, photoId: string): Game {
   if (game.phase !== 'submit' || !game.players.some(p => p.id === ownerId && p.connected) || game.photos.some(p => p.ownerId === ownerId || p.id === photoId)) throw new Error('Foto kann in dieser Runde nicht eingereicht werden.');
@@ -23,8 +23,15 @@ export function reveal(game: Game, random = Math.random): Game {
   if (!allSubmitted(game) || game.phase !== 'submit') throw new Error('Es fehlen noch Fotos.');
   const photos = [...game.photos];
   for (let i = photos.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [photos[i], photos[j]] = [photos[j], photos[i]]; }
-  return {...game, phase: 'vote', photos};
+  return {...game, phase: 'reveal', photos, revealIndex:-1};
 }
+export function nextReveal(game: Game): Game {
+  if(game.phase!=='reveal') throw new Error('Gerade läuft keine Foto-Show.');
+  if(game.players.some(p=>!p.connected)) throw new Error('Ein Gerät fehlt. Bitte warten oder den Spieler entfernen.');
+  return game.revealIndex+1<game.photos.length ? {...game,revealIndex:game.revealIndex+1} : {...game,phase:'vote'};
+}
+/** Only photos already revealed by the host are sent to remote guests. */
+export const visiblePhotos = (game: Game) => game.phase==='reveal' ? game.photos.slice(0,game.revealIndex+1) : game.phase==='vote' ? game.photos : [];
 export function castVote(game: Game, voterId: string, photoId: string, random = Math.random): Game {
   const photo = game.photos.find(p => p.id === photoId);
   if (game.phase !== 'vote' || !game.players.some(p => p.id === voterId && p.connected) || !photo || photo.ownerId === voterId || game.votes[voterId]) throw new Error('Diese Stimme ist ungültig.');

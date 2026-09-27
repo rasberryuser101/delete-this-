@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, reveal, submitPhoto, viewFor } from '../src/game';
+import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, nextReveal, reveal, submitPhoto, viewFor } from '../src/game';
 import { CATEGORIES, PROMPTS, pickPrompt } from '../src/prompts';
 function start() { let g = createGame('Host','party'); g = joinPlayer(g,{id:'guest',name:'Gast',score:0,connected:true}); return nextRound(g,['Chaos'],[],()=>0); }
 describe('Spielablauf', () => {
@@ -7,7 +7,10 @@ describe('Spielablauf', () => {
     let g = start(); expect(g.phase).toBe('submit');
     g = submitPhoto(g,'host','a'); expect(allSubmitted(g)).toBe(false);
     g = submitPhoto(g,'guest','b'); expect(allSubmitted(g)).toBe(true);
-    g = reveal(g,()=>0); expect(g.phase).toBe('vote');
+    g = reveal(g,()=>0); expect(g.phase).toBe('reveal');expect(g.revealIndex).toBe(-1);
+    expect(()=>castVote(g,'host','b')).toThrow();
+    g=nextReveal(g);expect(g.revealIndex).toBe(0);g=nextReveal(g);expect(g.revealIndex).toBe(1);
+    expect(()=>castVote(g,'host','b')).toThrow();g=nextReveal(g);expect(g.phase).toBe('vote');
     expect(() => castVote(g,'host','a')).toThrow();
     g = castVote(g,'host','b'); expect(g.phase).toBe('vote');
     expect(() => castVote(g,'host','b')).toThrow();
@@ -26,13 +29,13 @@ describe('Spielablauf', () => {
   });
   it('verhindert zweite Einreichung und ungültige Stimmen', () => {
     let g=start(); g=submitPhoto(g,'host','a'); expect(()=>submitPhoto(g,'host','c')).toThrow();
-    g=reveal(submitPhoto(g,'guest','b'));
+    g=reveal(submitPhoto(g,'guest','b'));while(g.phase==='reveal')g=nextReveal(g);
     expect(()=>castVote(g,'stranger','b')).toThrow();
     expect(()=>castVote(g,'host','missing')).toThrow();
   });
 });
 it('blendet die Eigentümer fremder Fotos und die Stimmziele für Gäste aus',()=>{
-  let g=start(); g=reveal(submitPhoto(submitPhoto(g,'host','a'),'guest','b')); g=castVote(g,'host','b');
+  let g=start(); g=reveal(submitPhoto(submitPhoto(g,'host','a'),'guest','b')); while(g.phase==='reveal')g=nextReveal(g); g=castVote(g,'host','b');
   const guest=viewFor(g,'guest'); expect(guest.photos.find(p=>p.id==='a')?.ownerId).toBe('hidden');
   expect(guest.photos.find(p=>p.id==='b')?.ownerId).toBe('guest');
   expect(guest.votes).toEqual({host:'cast'});
