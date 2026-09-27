@@ -12,13 +12,14 @@ type Stage = 'idle'|'search'|'approval'|'connected'|'error';
 export type PlayState = {game:Game|null; role:'host'|'guest'|null; you:string; roomCode:string; busy:boolean; status:string; error:string; countdown:number; progress:number; images:Record<string,string>; requests:JoinRequest[]; stage:Stage; diagnostic:string; check:string; online:boolean};
 const initial = (): PlayState => ({game:null,role:null,you:'host',roomCode:'',busy:false,status:'',error:'',countdown:0,progress:0,images:{},requests:[],stage:'idle',diagnostic:'',check:'',online:true});
 const message = (e:unknown) => e instanceof Error ? e.message : 'Das hat leider nicht geklappt.';
-type Dependencies = {session:(options:LobbyOptions)=>LobbySession; process:typeof processImage; receive:typeof receivePhoto; sound:(s:Sound)=>void};
+type Dependencies = {session:(options:LobbyOptions)=>LobbySession|Promise<LobbySession>; process:typeof processImage; receive:typeof receivePhoto; sound:(s:Sound)=>void};
 
 /** Authoritative state independent of React renders; all asynchronous work is session-bound. */
 export class GameController {
   private state = initial();
   private listeners = new Set<()=>void>();
   private session:LobbySession|null = null;
+  private turnConfigured = false;
   private host = '';
   private allowed = new Map<string,string>();
   private gate = new AdmissionGate(requests => this.patch({requests}));
@@ -47,7 +48,7 @@ export class GameController {
   leave = () => {
     this.epoch++; this.lifetime.abort();this.lifetime=new AbortController();
     this.cancelJoin?.();this.cancelJoin=undefined;clearTimeout(this.timer);clearTimeout(this.countdownTimer);clearInterval(this.poll);
-    this.gate.clear();this.allowed.clear();this.used=[];this.host='';
+    this.gate.clear();this.allowed.clear();this.used=[];this.host='';this.turnConfigured=false;
     const session=this.session;this.session=null; if(session) void session.room.leave().catch(()=>{});
     this.clearPhotos();this.state=initial();this.listeners.forEach(fn=>fn());
   };
@@ -66,11 +67,11 @@ export class GameController {
     for(const player of game.players) if(player.id!=='host'&&player.connected) void this.sync(player.id).catch(()=>{});
     if(game.phase==='result'&&previous?.phase!=='result') this.deps.sound('winner');
   }
-  create = (name:string, mode:Mode) => {
+  create = async (name:string, mode:Mode, turnServers:RTCIceServer[] = []) => {
     try {
-      const clean=this.checkName(name); this.leave();const epoch=this.epoch;
-      const code=makeRoomCode();this.patch({game:createGame(clean,mode),role:'host',roomCode:code,status:'Lobby offen. Gäste müssen von dir freigegeben werden.',stage:'connected'});
-      const session=this.deps.session({code,role:'host',authorize:async(id,remote)=>{
+      const clean=this.checkName(name); this.leave();const epoch=this.epoch;this.turnConfigured=turnServers.length>0;
+      const code=makeRoomCode();this.patch({game:createGame(clean,mode),role:'host',roomCode:code,busy:true,status:'Sichere Lobby wird geöffnet …',stage:'connected'});
+      const session=await this.deps.session({code,role:'host',turnServers,authorize:async(id,remote)=>{
         if(this.allowed.has(id)) return;
         const game=this.state.game;
         if(epoch!==this.epoch||game?.phase!=='lobby'||this.state.countdown||this.allowed.size>=7) throw new Error('Lobby geschlossen oder voll.');
@@ -78,6 +79,7 @@ export class GameController {
         if(epoch!==this.epoch||this.state.game?.phase!=='lobby'||this.state.countdown||this.allowed.size>=7) throw new Error('Lobby geschlossen oder voll.');
         this.allowed.set(id,remote.name!);
       },onJoinError:(id)=>{this.gate.decide(id,false,'Verbindungsversuch beendet.');if(!this.state.game?.players.some(p=>p.id===id)) this.allowed.delete(id);}});
+      if(epoch!==this.epoch){void session.room.leave().catch(()=>{});return;}
       this.session=session;this.attach(session,epoch);
       session.room.onPeerJoin=id=>{
         if(epoch!==this.epoch) return;
@@ -87,14 +89,14 @@ export class GameController {
         else {try{this.publish(joinPlayer(game,{id,name,score:0,connected:true}));}catch{return;}}
         this.deps.sound('connected');this.patch({status:`${name} ist dabei!`});
       };
-      this.startPolling(epoch);
+      this.patch({busy:false,status:'Lobby offen. Gäste müssen von dir freigegeben werden.'});this.startPolling(epoch);
     } catch(e) {this.leave();this.fail(e);}
   };
   approve = (id:string,yes:boolean) => this.gate.decide(id,yes);
-  join = async (name:string,input:string) => {
+  join = async (name:string,input:string,turnServers:RTCIceServer[] = []) => {
     let epoch=this.epoch;
     try {
-      const clean=this.checkName(name), code=normalizeRoomCode(input);this.leave();epoch=this.epoch;
+      const clean=this.checkName(name), code=normalizeRoomCode(input);this.leave();epoch=this.epoch;this.turnConfigured=turnServers.length>0;
       this.patch({role:'guest',roomCode:code,busy:true,stage:'search',status:'Suche Lobby …'});
       let rejectJoin!:(e:Error)=>void, resolveJoin!:()=>void;
       const joined=new Promise<void>((resolve,reject)=>{resolveJoin=resolve;rejectJoin=reject;});
@@ -102,11 +104,12 @@ export class GameController {
       const arm=(ms:number,text:()=>string)=>{clearTimeout(this.timer);this.timer=setTimeout(()=>rejectJoin(new Error(text())),ms);};
       this.cancelJoin=()=>rejectJoin(new Error('Beitritt abgebrochen.'));
       let transportFailed=false;
-      const session=this.deps.session({code,role:'guest',name:clean,
+      const session=await this.deps.session({code,role:'guest',name:clean,turnServers,
         authorize:id=>{if(this.host&&this.host!==id)throw new Error('Anderer Host.');this.host=id;},
         onStage:()=>{if(epoch!==this.epoch)return;this.patch({stage:'approval',status:'Anfrage angekommen. Der Host muss dich freigeben.'});arm(APPROVAL_MS+10_000,()=> 'Keine Freigabe erhalten. Bitte den Host fragen und erneut beitreten.');},
         onJoinError:(id,error)=>{if(epoch!==this.epoch)return;transportFailed=true;if(id===this.host)rejectJoin(new Error(error.includes('abgelehnt')?error:NETWORK_ERROR));}
       });
+      if(epoch!==this.epoch){void session.room.leave().catch(()=>{});return;}
       this.session=session;this.patch({check:peerCheck(session.selfId)});this.attach(session,epoch);
       session.room.onPeerJoin=id=>{if(epoch===this.epoch&&id===this.host)resolveJoin();};
       arm(JOIN_TIMEOUT_MS,()=>transportFailed?NETWORK_ERROR:session.relayCount()===0?'Kein Lobby-Dienst erreichbar. Internet, VPN oder Inhaltsblocker prüfen.':CONNECTION_ERROR);
@@ -137,7 +140,7 @@ export class GameController {
     let checking=false;
     const poll=async()=>{
       if(epoch!==this.epoch||!this.session)return;
-      this.patch({diagnostic:`v3 · Vermittlung: ${this.session.relayCount()}/5 erreichbar · ${this.state.stage==='approval'?'WebRTC verbunden, Freigabe offen':this.state.stage==='connected'?'Sitzung geöffnet': 'WebRTC wird gesucht'} · kein TURN`});
+      this.patch({diagnostic:`v3.1 · Vermittlung: ${this.session.relayCount()}/5 erreichbar · ${this.state.stage==='approval'?'WebRTC verbunden, Freigabe offen':this.state.stage==='connected'?'Sitzung geöffnet': 'WebRTC wird gesucht'} · ${this.turnConfigured?'TURN-Zugang eingerichtet':'nur direkte Verbindung'}`});
       if(checking||this.state.role!=='guest'||this.state.stage!=='connected')return;
       checking=true;
       try{await this.send(this.host,{type:'ready'});if(epoch===this.epoch)this.patch({online:true});}

@@ -50,7 +50,7 @@ function create(net:ReturnType<typeof network>, process:()=>Promise<Blob>=async(
 beforeEach(()=>vi.useFakeTimers());
 afterEach(()=>{controllers.splice(0).forEach(c=>c.leave());vi.useRealTimers();});
 async function pair(mode:'party'|'remote'='remote') {
-  const net=network(),host=create(net),guest=create(net);host.create('Host',mode);
+  const net=network(),host=create(net),guest=create(net);await host.create('Host',mode);
   const join=guest.join('Gast',host.snapshot().roomCode);await flush();
   expect(guest.snapshot().stage).toBe('approval');expect(host.snapshot().game?.players).toHaveLength(1);expect(guest.snapshot().game).toBeNull();
   host.approve(host.snapshot().requests[0].id,true);await join;await flush();
@@ -81,7 +81,7 @@ describe('Mehrgeräte-Spielablauf mit Empfangsbestätigungen',()=>{
     expect(host.snapshot().game?.photos).toHaveLength(1);expect(guest.snapshot().progress).toBe(100);expect(guest.snapshot().error).toBe('');
   });
   it('lehnt Fremde ab, bevor sie einen Spielstand oder Fotos erhalten',async()=>{
-    const net=network(),host=create(net),guest=create(net);host.create('Host','remote');
+    const net=network(),host=create(net),guest=create(net);await host.create('Host','remote');
     const joining=guest.join('Fremder',host.snapshot().roomCode);await flush();
     const id=host.snapshot().requests[0].id;host.approve(id,false);await joining;
     expect(guest.snapshot().game).toBeNull();expect(guest.snapshot().error).toContain('abgelehnt');expect(host.snapshot().game?.players).toHaveLength(1);
@@ -97,7 +97,7 @@ describe('Mehrgeräte-Spielablauf mit Empfangsbestätigungen',()=>{
   });
   it('speichert keine nach dem Verlassen fertig verarbeiteten Fotos',async()=>{
     const net=network();let done!:(blob:Blob)=>void;
-    const host=create(net,()=>new Promise(resolve=>{done=resolve;})),guest=create(net);host.create('Host','remote');
+    const host=create(net,()=>new Promise(resolve=>{done=resolve;})),guest=create(net);await host.create('Host','remote');
     const pending=guest.join('Gast',host.snapshot().roomCode);await flush();host.approve(host.snapshot().requests[0].id,true);await pending;
     host.begin(['Normal']);await vi.advanceTimersByTimeAsync(3000);
     const submit=host.submit(new File(['x'],'x.jpg',{type:'image/jpeg'}));host.leave();done(jpeg);await submit;
