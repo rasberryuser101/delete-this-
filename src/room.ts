@@ -1,92 +1,70 @@
-import { joinRoom } from '@trystero-p2p/mqtt';
-import type { JsonValue, MessageAction, Room } from '@trystero-p2p/core';
-
-export const CONNECTION_ERROR = 'Die Lobby-Verbindung konnte nicht hergestellt werden. Bitte Code prüfen und erneut versuchen.';
-export const NETWORK_ERROR = 'Dieses Netzwerk blockiert leider direkte WebRTC-Verbindungen.';
-export const APP_ID = 'at.delete-this.party.v2';
-export const JOIN_TIMEOUT_MS = 20_000;
+import { joinRoom, getRelaySockets, selfId } from '@trystero-p2p/mqtt';
+import type { RequestAction, Room } from '@trystero-p2p/core';
+import { APPROVAL_MS } from './admission';
+import type { PhotoAction, PhotoAck } from './transfer';
+export { parsePhotoMetadata } from './transfer';
+export const BUILD = '3.0 · Freigabe + Empfangsbestätigung';
+export const CONNECTION_ERROR = 'Lobby nicht gefunden. Beide Geräte müssen Version 3 verwenden und dieselbe neue Einladung öffnen.';
+export const NETWORK_ERROR = 'Direkte Verbindung konnte in diesem Netzwerk leider nicht hergestellt werden. Ein TURN-Relay könnte nötig sein; es ist nicht eingerichtet.';
+export const APP_ID = 'at.delete-this.party.v3';
+export const JOIN_TIMEOUT_MS = 30_000;
+export const STUN_SERVERS: RTCIceServer[] = [{urls:'stun:stun.l.google.com:19302'}, {urls:'stun:stun.cloudflare.com:3478'}];
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-export const STUN_SERVERS: RTCIceServer[] = [
-  {urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302']},
-  {urls: 'stun:stun.cloudflare.com:3478'},
-  {urls: 'stun:global.stun.twilio.com:3478'}
-];
-
 export type LobbyRole = 'host' | 'guest';
-export type LobbyHandshake = {version: 1; role: LobbyRole; name?: string};
-export type PhotoMetadata = {version: 1; id: string; roundId: string; bytes: number; mime: 'image/webp' | 'image/jpeg'};
-export type LobbySession = {room: Room; control: MessageAction<string>; photo: MessageAction<Blob>};
-
-export function makeRoomCode(randomBytes: Uint8Array = crypto.getRandomValues(new Uint8Array(6))): string {
-  if (randomBytes.length !== 6) throw new Error('Sechs Zufallsbytes erwartet.');
-  return Array.from(randomBytes, byte => ALPHABET[byte % ALPHABET.length]).join('');
+export type LobbyHandshake = {version: 3; role: LobbyRole; name?: string};
+export type LobbySession = {room: Room; selfId: string; control: RequestAction<string, {ok:true}>; photo: PhotoAction; relayCount: () => number};
+export type LobbyOptions = {code: string; role: LobbyRole; name?: string; authorize?: (id: string, remote: LobbyHandshake) => void | Promise<void>; onStage?: (stage: 'approval', id: string) => void; onJoinError?: (id: string, error: string) => void};
+export function makeRoomCode(bytes = crypto.getRandomValues(new Uint8Array(10))): string {
+  if (bytes.length !== 10) throw new Error('Zehn Zufallsbytes erwartet.');
+  return Array.from(bytes, b => ALPHABET[b % ALPHABET.length]).join('');
 }
 export function normalizeRoomCode(input: string): string {
-  const value = input.trim();
-  let code = value;
-  if (value.startsWith('https://') || value.startsWith('http://')) {
-    try { const url = new URL(value); code = new URLSearchParams(url.hash.split('?')[1] ?? '').get('code') ?? value; }
-    catch { throw new Error('Der Einladungslink ist ungültig.'); }
+  let code = input.trim();
+  if (/^https?:\/\//.test(code)) {
+    try { code = new URLSearchParams(new URL(code).hash.split('?')[1] ?? '').get('code') ?? ''; }
+    catch { throw new Error('Ungültiger Einladungslink.'); }
   }
-  code = code.toUpperCase().replace(/[\s-]/g, '');
-  if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) throw new Error('Bitte einen gültigen sechsstelligen Lobbycode eingeben.');
+  code = code.toUpperCase().replace(/[\s-]/g,'');
+  if (!/^[A-HJ-NP-Z2-9]{10}$/.test(code)) throw new Error('Bitte den neuen zehnstelligen Code oder Einladungslink verwenden. Alte Lobbys sind nicht kompatibel.');
   return code;
 }
-export function roomLink(code: string, location: Pick<Location,'origin'|'pathname'>): string {
-  return `${location.origin}${location.pathname}#/spiel?code=${normalizeRoomCode(code)}`;
-}
-
-const plainObject = (value: unknown): value is Record<string,unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
-const safeId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 100 && /^[\w-]+$/.test(value);
-
+export const roomLink = (code: string, location: Pick<Location,'origin'|'pathname'>) => `${location.origin}${location.pathname}#/spiel?code=${normalizeRoomCode(code)}`;
 export function parseHandshake(value: unknown): LobbyHandshake | null {
-  if (!plainObject(value) || value.version !== 1 || !['host','guest'].includes(value.role as string)) return null;
-  if (value.role === 'guest' && (typeof value.name !== 'string' || !value.name.trim() || value.name.length > 24)) return null;
-  return {version: 1, role: value.role as LobbyRole, ...(value.role === 'guest' ? {name: value.name as string} : {})};
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string,unknown>;
+  if (v.version !== 3 || !['host','guest'].includes(v.role as string) || (v.role === 'guest' && (typeof v.name !== 'string' || !v.name.trim() || v.name.length > 24))) return null;
+  return v as LobbyHandshake;
 }
-
-export function parsePhotoMetadata(value: JsonValue | undefined): PhotoMetadata | null {
-  if (!plainObject(value) || value.version !== 1 || !safeId(value.id) || !safeId(value.roundId) ||
-      !Number.isInteger(value.bytes) || (value.bytes as number) < 1 || (value.bytes as number) > 450_000 ||
-      !['image/webp','image/jpeg'].includes(value.mime as string)) return null;
-  return value as PhotoMetadata;
-}
-
 export function lobbyConfig(code: string) {
-  const normalized = normalizeRoomCode(code);
-  return {
-    appId: APP_ID,
-    password: `delete-this:${normalized}`,
-    // Alle fuenf von Trystero gepflegten, oeffentlichen MQTT-over-WSS-Broker
-    // werden parallel genutzt. Sie vermitteln nur verschluesselte WebRTC-SDPs.
-    relayConfig: {redundancy: 5, warnOnRelayFailure: false},
-    rtcConfig: {iceServers: STUN_SERVERS, iceCandidatePoolSize: 4},
-    trickleIce: true
-  };
+  return {appId:APP_ID, password:`delete-this:${normalizeRoomCode(code)}`, relayConfig:{redundancy:5, warnOnRelayFailure:false}, rtcConfig:{iceServers:STUN_SERVERS}, trickleIce:true};
 }
-
-export function createLobbySession(options: {
-  code: string;
-  role: LobbyRole;
-  name?: string;
-  authorize?: (peerId: string, remote: LobbyHandshake) => void | Promise<void>;
-  onJoinError?: (peerId: string, error: string) => void;
-}): LobbySession {
-  const code = normalizeRoomCode(options.code);
-  const mine: LobbyHandshake = options.role === 'guest'
-    ? {version: 1, role: 'guest', name: options.name?.trim()}
-    : {version: 1, role: 'host'};
-  if (!parseHandshake(mine)) throw new Error('Ungültige Spielerdaten.');
-  const room = joinRoom(lobbyConfig(code), code, {
-    handshakeTimeoutMs: 12_000,
+export function createLobbySession(options: LobbyOptions): LobbySession {
+  if (!globalThis.isSecureContext || typeof RTCPeerConnection === 'undefined') throw new Error('WebRTC ist hier nicht verfügbar. Bitte die HTTPS-Seite in Safari oder Chrome öffnen.');
+  const mine: LobbyHandshake = {version:3, role:options.role, ...(options.role==='guest' ? {name:options.name?.trim()} : {})};
+  if (!parseHandshake(mine)) throw new Error('Bitte einen Namen eingeben.');
+  const room = joinRoom(lobbyConfig(options.code), normalizeRoomCode(options.code), {
+    handshakeTimeoutMs: APPROVAL_MS + 15_000,
     onJoinError: ({peerId,error}) => options.onJoinError?.(peerId,error),
-    onPeerHandshake: async (peerId,send,receive) => {
-      await send(mine);
-      const remote = parseHandshake((await receive()).data);
-      if (!remote || remote.role === options.role) throw new Error('Diese Verbindung gehört nicht zur gesuchten Lobby.');
-      await options.authorize?.(peerId,remote);
+    onPeerHandshake: async (id, send, receive, initiator) => {
+      let remote: LobbyHandshake | null;
+      if (initiator) { await send(mine); remote = parseHandshake((await receive()).data); }
+      else { remote = parseHandshake((await receive()).data); await send(mine); }
+      if (!remote || remote.role === mine.role) throw new Error('Unpassende Rolle oder Spielversion.');
+      if (mine.role === 'host') {
+        await send({status:'approval'});
+        try { await options.authorize?.(id,remote); await send({status:'accepted'}); }
+        catch (e) { await send({status:'denied'}); throw e; }
+      } else {
+        await options.authorize?.(id,remote);
+        const waiting = (await receive()).data as {status?:string};
+        if (waiting?.status !== 'approval') throw new Error('Ungültige Lobby-Antwort.');
+        options.onStage?.('approval', id);
+        const decision = (await receive()).data as {status?:string};
+        if (decision?.status !== 'accepted') throw new Error('Der Host hat die Anfrage abgelehnt oder die Lobby geschlossen.');
+      }
     }
   });
-  return {room, control: room.makeAction<string>('control-v1'), photo: room.makeAction<Blob>('photo-v1')};
+  return {room, selfId, relayCount:() => Object.values(getRelaySockets()).filter(s => (s as WebSocket).readyState===1).length,
+    control:room.makeAction<string,{ok:true}>('control-v3',{kind:'request'}),
+    photo:room.makeAction<Uint8Array,PhotoAck>('photo-v3',{kind:'request'})};
 }

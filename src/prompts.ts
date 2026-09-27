@@ -26,7 +26,10 @@ const seeds: Record<Category, string[]> = {
     'Ein Bild, das nach einer Entschuldigung bei der Einrichtung aussieht',
     'Wenn der Algorithmus dich persönlich auslacht',
     'Ein Screenshot aus dem schlechtesten Tutorial der Welt',
-    'Ein Foto, das einen unangenehmen Anruf auslöst'
+    'Ein Foto, das einen unangenehmen Anruf auslöst',
+    'Das Profilbild, mit dem jemand auf LinkedIn ein Schneeballsystem verkaufen will',
+    'Wenn dein Lebenslauf dieses Foto als Referenz angibt',
+    'Ein Bild, das der Algorithmus für „mutig“ und deine Freunde für „bitte löschen“ hält'
   ],
   Freunde: [
     'Der Beweis, warum diese Freundesgruppe keine Aufsicht haben darf',
@@ -107,7 +110,10 @@ const seeds: Record<Category, string[]> = {
     'Wenn „lässig“ eine formelle Beschwerde einreicht',
     'Der Beweis, dass man nicht jeden Winkel ausprobieren muss',
     'Ein Foto mit der Energie eines Motivationsplakats im Keller',
-    'Wenn dein Alter Ego lieber anonym bleiben möchte'
+    'Wenn dein Alter Ego lieber anonym bleiben möchte',
+    'Das Foto, das du im Lebenslauf als „kreative Problemlösung“ verkaufen würdest',
+    'Ein Bild, bei dem sogar dein LinkedIn-Netzwerk „weniger anzeigen“ klickt',
+    'Wenn die Kamera höflich war und trotzdem Anzeige erstattet'
   ],
   Dating: [
     'Das Foto, bei dem die Dating-App eine Sicherheitsfrage stellt',
