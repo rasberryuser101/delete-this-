@@ -3,7 +3,7 @@ import { AdmissionGate, APPROVAL_MS } from '../src/admission';
 afterEach(()=>vi.useRealTimers());
 it('verlangt Freigabe, begrenzt die Warteschlange und räumt Timer auf',async()=>{
   vi.useFakeTimers();const changes=vi.fn();const gate=new AdmissionGate(changes);
-  const pending=Array.from({length:7},(_,i)=>gate.request(`id${i}`,'Chris').catch(e=>e));
+  const pending=Array.from({length:12},(_,i)=>gate.request(`id${i}`,'Chris').catch(e=>e));
   await expect(gate.request('extra','Fremder')).rejects.toThrow();
   gate.decide('id0',true);expect(await pending[0]).toBeUndefined();
   gate.clear();await Promise.all(pending);expect(vi.getTimerCount()).toBe(0);expect(changes).toHaveBeenLastCalledWith([]);

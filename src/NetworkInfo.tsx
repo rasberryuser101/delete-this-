@@ -1,14 +1,12 @@
 export function NetworkInfo(){return <section className="network-explainer">
-  <h2>Wer bekommt hier was? 🔎</h2>
-  <p>Die kostenlose Testversion nutzt öffentlich bereitgestellte Hilfsdienste von Softwareprojekten und Firmen. „Kostenlos“ bedeutet hier: zum Ausprobieren bereitgestellt. Verfügbarkeit und die Verarbeitung technischer Verbindungsdaten bestimmt der jeweilige Anbieter.</p>
-  <div className="table-scroll"><table><thead><tr><th>Dienst</th><th>Aufgabe</th><th>Daten</th></tr></thead><tbody>
-    <tr><td>Vercel</td><td>Liefert diese Webseite</td><td>Normale Abrufdaten wie IP-Adresse und Zeitpunkt; keine Spielfotos</td></tr>
-    <tr><td>Mosquitto / HiveMQ<br/><small>test.mosquitto.org · broker.hivemq.com</small></td><td>Helfen euren Browsern, sich zu finden</td><td>Verschlüsselte Verbindungsangebote, technische Kennungen und IP-Adressen; keine Fotos</td></tr>
-    <tr><td>Google / Cloudflare<br/><small>stun.l.google.com · stun.cloudflare.com</small></td><td>Helfen beim Finden eines direkten Wegs</td><td>Verbindungsdaten und IP-Adressen; keine Fotos</td></tr>
-    <tr><td>TURN, falls eingerichtet</td><td>Umweg, wenn Router den direkten Weg sperren</td><td>Verschlüsselte WebRTC-Pakete und Verkehrsdaten; der Relay kann die Bilder nicht entschlüsseln</td></tr>
-    <tr><td>Eure Spielgeräte</td><td>Verarbeiten und zeigen Fotos</td><td>Der Host erhält jedes Foto. Im Remote Mode erhalten auch die freigegebenen Gäste die gezeigten Fotos.</td></tr>
-  </tbody></table></div>
-  <p><strong>Warum klappt es am selben PC?</strong> Dort muss die Verbindung kaum Netzwerkgrenzen überwinden. Zwischen Mobilfunk und WLAN können Router den Weg blockieren. Die App kann diese Sperren nicht zuverlässig ohne eine erreichbare Netzwerkbrücke umgehen.</p>
-  <p><strong>Aktueller Stand:</strong> Ein automatischer TURN-Dienst ist nicht eingerichtet. Ein Test im selben WLAN kann helfen, ist aber keine Garantie. Eine Anzahl erreichbarer Vermittlungsdienste beweist noch keine Verbindung zum Host.</p>
-  <p>Es gibt keine Foto-Datenbank. Fotos werden nur für die Runde im Speicher gehalten. Freigegebene Mitspieler können trotzdem Screenshots machen; vollständige Unangreifbarkeit kann keine Webapp versprechen.</p>
-</section>;}
+ <h2>Wer bekommt hier was? 🔎</h2><p>Metered stellt die Vermittlung und bei Bedarf eine verschlüsselte Netzwerkbrücke bereit. Deine Freunde brauchen keinen Account und keine technischen Einstellungen.</p>
+ <div className="table-scroll"><table><thead><tr><th>Dienst</th><th>Aufgabe</th><th>Daten</th></tr></thead><tbody>
+ <tr><td>Vercel</td><td>Liefert diese Webseite</td><td>Normale Abrufdaten wie IP-Adresse und Zeitpunkt; keine Spielfotos</td></tr>
+ <tr><td>Metered Realtime</td><td>Findet die Lobby und vermittelt Verbindungen und Spielzustände</td><td>IP-Adressen, Gerätekennungen, Verbindungsdaten, Namen, Freigaben, Prompt, Runde, Stimmen und Punkte. Keine Bilddateien im Messaging.</td></tr>
+ <tr><td>Metered STUN / TURN</td><td>Direkter Weg oder bei Bedarf Relay</td><td>Netzwerk- und Verkehrsdaten. TURN transportiert verschlüsselte WebRTC-Pakete, deren Bildinhalt es nicht entschlüsseln kann.</td></tr>
+ <tr><td>Eure Spielgeräte</td><td>Verarbeiten und zeigen Fotos</td><td>Der Host erhält die Einreichungen. Im Remote-Modus erhalten freigegebene Spieler die enthüllten Fotos, im Party-Modus freigegebene Displays.</td></tr>
+ </tbody></table></div>
+ <p>Fotos werden lokal verkleinert und neu encodiert, ausschließlich über WebRTC-Datenkanäle übertragen und nach der Runde aus dem App-Speicher entfernt. Es gibt keine Foto-Datenbank und keinen Foto-Upload an Vercel oder Metered Messaging.</p>
+ <p>Spieler-/Display-ID, Anzeigename und Toneinstellungen dürfen lokal gespeichert werden. Andere Geräte sehen nur freigegebene Spielinhalte. Nach dem Neuladen ist eine erneute Host-Freigabe nötig; kurze Unterbrechungen können automatisch wiederhergestellt werden. Der Host muss geöffnet bleiben.</p>
+ <p>Freigegebene Mitspieler können Screenshots machen. Ein weitergegebener Raumcode ermöglicht eine Beitrittsanfrage, keine automatische Freigabe. Es gibt keine Garantie vollständiger Unangreifbarkeit. Die Verarbeitung technischer Daten und Verfügbarkeit bei Metered richtet sich nach dem Anbieter und dem eingerichteten Tarif.</p>
+ </section>;}

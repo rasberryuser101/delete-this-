@@ -1,4 +1,5 @@
-export const MAX_IMAGE_BYTES = 450_000;
+export const MAX_IMAGE_BYTES = 1_000_000;
+export const TARGET_IMAGE_BYTES = 400_000;
 export const MAX_EDGE = 1280;
 async function openImage(blob: Blob): Promise<{source: CanvasImageSource; width:number; height:number; close:()=>void}> {
   if (typeof createImageBitmap === 'function') {
@@ -41,7 +42,7 @@ export async function processImage(file: File): Promise<Blob> {
       for (const quality of [0.78, 0.62, 0.46, 0.32]) {
         for (const mime of ['image/webp', 'image/jpeg']) {
           const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, mime, quality));
-          if (blob && blob.type === mime && blob.size <= MAX_IMAGE_BYTES && isSafeImage(new Uint8Array(await blob.slice(0, 12).arrayBuffer()), mime)) return blob;
+          if (blob && blob.type === mime && blob.size <= TARGET_IMAGE_BYTES && isSafeImage(new Uint8Array(await blob.slice(0, 12).arrayBuffer()), mime)) return blob;
         }
       }
       scale *= 0.75;

@@ -1,12 +1,12 @@
 import { pickPrompt, type Category } from './prompts';
-export type Mode = 'party' | 'remote';
+export type Mode = 'PARTY' | 'REMOTE';
 export type Phase = 'lobby' | 'submit' | 'reveal' | 'vote' | 'result';
 export interface Player { id: string; name: string; score: number; connected: boolean }
 export interface Photo { id: string; ownerId: string }
 export interface Game { phase: Phase; mode: Mode; round: number; roundId: string; prompt: string; category: Category | null; players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null; revealIndex: number }
 export const createGame = (hostName: string, mode: Mode): Game => ({phase: 'lobby', mode, round: 0, roundId: '', prompt: '', category: null, players: [{id: 'host', name: hostName, score: 0, connected: true}], photos: [], votes: {}, winnerId: null, revealIndex:-1});
 export function joinPlayer(game: Game, player: Player): Game {
-  if (game.phase !== 'lobby' || game.players.length >= 8 || game.players.some(p => p.id === player.id)) throw new Error('Beitritt nur in der Lobby mit maximal 8 Personen.');
+  if (game.phase !== 'lobby' || game.players.length >= 10 || game.players.some(p => p.id === player.id)) throw new Error('Beitritt nur in der Lobby mit maximal 10 Personen.');
   return {...game, players: [...game.players, player]};
 }
 export function nextRound(game: Game, categories: Category[], used: string[], random = Math.random): Game {
@@ -67,4 +67,12 @@ export function viewFor(game: Game, viewerId: string): Game {
     photos: game.photos.map(photo => ({...photo, ownerId: photo.ownerId === viewerId ? viewerId : 'hidden'})),
     votes: Object.fromEntries(Object.keys(game.votes).map(id => [id, 'cast']))
   };
+}
+
+/** Only already-public information is eligible for the display control path. */
+export type PublicDisplayState = Pick<Game,'phase'|'mode'|'round'|'roundId'|'prompt'|'category'|'players'|'winnerId'|'revealIndex'> & {photos:Photo[];countdown:number};
+export function displayView(game:Game,countdown=0):PublicDisplayState {
+  return {countdown,phase:game.phase,mode:game.mode,round:game.round,roundId:game.roundId,prompt:game.prompt,category:game.category,
+    players:game.players.map((p,i)=>({...p,id:`player-${i}`})),winnerId:game.winnerId?`player-${game.players.findIndex(p=>p.id===game.winnerId)}`:null,revealIndex:visiblePhotos(game).length?game.revealIndex:-1,
+    photos:visiblePhotos(game).map(p=>({id:p.id,ownerId:'hidden'}))};
 }

@@ -2,10 +2,10 @@ import type { Game } from './game';
 import { REVEAL_LINES } from './party';
 import './show.css';
 
-type Props = {game:Game;images:Record<string,string>;host:boolean;busy:boolean;next:()=>void};
-export function RevealStage({game,images,host,busy,next}:Props) {
+type Props = {game:Game;images:Record<string,string>;host:boolean;display?:boolean;busy:boolean;next:()=>void};
+export function RevealStage({game,images,host,display=false,busy,next}:Props) {
   const photo=game.photos[game.revealIndex];
-  const partyPhone=game.mode==='party'&&!host;
+  const partyPhone=game.mode==='PARTY'&&!host&&!display;
   const last=game.revealIndex===game.photos.length-1;
   return <section className="reveal-show center" aria-label="Die Foto-Show">
     <div className="show-marquee">✦ DIE GALERIE STEHT VOR GERICHT ✦</div>

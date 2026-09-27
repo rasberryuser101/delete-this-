@@ -1,5 +1,5 @@
 export const APPROVAL_MS = 60_000;
-export type JoinRequest = {id: string; name: string; check: string};
+export type JoinRequest = {id: string; name: string; check: string; role?: 'PLAYER'|'DISPLAY'};
 export const peerCheck = (id: string) => id.slice(-8).toUpperCase();
 
 /** The check must be compared with the friend's screen; a name is not an identity. */
@@ -8,14 +8,14 @@ export class AdmissionGate {
   private denied = new Set<string>();
   private attempts: number[] = [];
   constructor(private changed: (requests: JoinRequest[]) => void) {}
-  request(id: string, name: string): Promise<void> {
+  request(id: string, name: string, role: 'PLAYER'|'DISPLAY' = 'PLAYER', check = peerCheck(id)): Promise<void> {
     const now = Date.now();
     this.attempts = this.attempts.filter(t => now - t < 60_000);
-    if (this.denied.has(id) || this.pending.has(id) || this.pending.size >= 7 || this.attempts.length >= 12) return Promise.reject(new Error('Zu viele Anfragen oder Beitritt abgelehnt.'));
+    if (this.denied.has(id) || this.pending.has(id) || this.pending.size >= 12 || this.attempts.length >= 12) return Promise.reject(new Error('Zu viele Anfragen oder Beitritt abgelehnt.'));
     this.attempts.push(now);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.decide(id, false, 'Die Freigabe ist abgelaufen. Bitte erneut anfragen.'), APPROVAL_MS);
-      this.pending.set(id, {request: {id, name, check: peerCheck(id)}, resolve, reject, timer});
+      this.pending.set(id, {request: {id, name, check, role}, resolve, reject, timer});
       this.emit();
     });
   }

@@ -3,14 +3,14 @@ import { parsePhotoMetadata, receivePhoto, transferPhoto, withDeadline, type Pho
 const meta={version:2 as const,id:'photo',roundId:'round',bytes:7,mime:'image/jpeg' as const};
 const bytes=new Uint8Array([255,216,255,1,2,3,4]);
 afterEach(()=>vi.useRealTimers());
-it('akzeptiert Uint8Array und ArrayBuffer aus Trystero, erhält Bytes und MIME',async()=>{
+it('akzeptiert Uint8Array und ArrayBuffer vom RTC-Kanal, erhält Bytes und MIME',async()=>{
   for(const data of [bytes,bytes.buffer,new DataView(bytes.buffer)]) {
     const decode=vi.fn(async()=>{});const blob=await receivePhoto(data,meta,decode);
     expect(blob.type).toBe('image/jpeg');expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes);expect(decode).toHaveBeenCalledOnce();
   }
 });
 it('verwirft falsche Länge, Bildsignatur und zu große Metadaten',async()=>{
-  expect(parsePhotoMetadata({...meta,bytes:450001})).toBeNull();
+  expect(parsePhotoMetadata({...meta,bytes:1000001})).toBeNull();
   await expect(receivePhoto(new Uint8Array(7),meta,async()=>{})).rejects.toThrow();
   await expect(receivePhoto(bytes.subarray(1),meta,async()=>{})).rejects.toThrow();
   await expect(receivePhoto('text',meta,async()=>{})).rejects.toThrow();

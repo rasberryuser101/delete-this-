@@ -1,4 +1,4 @@
-import type { RequestAction } from '@trystero-p2p/core';
+import type { RequestAction } from './actions';
 import { isSafeImage, MAX_IMAGE_BYTES, validateImage } from './image';
 export type PhotoMetadata = {version: 2; id: string; roundId: string; bytes: number; mime: 'image/webp' | 'image/jpeg'};
 export type PhotoAck = {ok: true; id: string; roundId: string};
@@ -10,7 +10,7 @@ export function parsePhotoMetadata(value: unknown): PhotoMetadata | null {
   if (v.version !== 2 || !safeId(v.id) || !safeId(v.roundId) || !Number.isInteger(v.bytes) || (v.bytes as number) < 1 || (v.bytes as number) > MAX_IMAGE_BYTES || !['image/jpeg','image/webp'].includes(v.mime as string)) return null;
   return v as PhotoMetadata;
 }
-/** Trystero 0.25 receives binary as Uint8Array, not Blob. */
+/** Reassembled RTC binary; original files never enter this path. */
 export async function receivePhoto(data: unknown, meta: PhotoMetadata, decode = validateImage): Promise<Blob> {
   const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : null;
   if (!bytes || bytes.byteLength !== meta.bytes || bytes.byteLength > MAX_IMAGE_BYTES || !isSafeImage(bytes, meta.mime)) throw new Error('Bilddaten oder Bildgröße ungültig.');

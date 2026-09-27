@@ -1,70 +1,93 @@
 # Delete This! 📸
 
-Deutschsprachiges Foto-Partyspiel für 2–8 Personen. Statische React/TypeScript/Vite-Webapp ohne eigenen Server, Datenbank oder Account. Der kurze Lobbycode wird über **mehrere öffentliche MQTT-over-WSS-Broker** vermittelt. Trystero verschlüsselt die WebRTC-Verbindungsdaten und nutzt zwei Broker (Mosquitto und HiveMQ). Fotos werden lokal verarbeitet und über verschlüsselte WebRTC-Datenkanäle übertragen. WebRTC versucht zunächst eine direkte Route; bei blockierenden Netzen kann jeder Teilnehmer kurzlebige TURN-Zugangsdaten für die aktuelle Sitzung eingeben. Ohne eingerichteten TURN-Dienst ist eine Verbindung zwischen restriktiven Netzen nicht garantiert.
+Bestehendes deutsches Foto-Partyspiel für 2–10 Spieler, weiterhin statisch mit React, TypeScript und Vite auf **GitHub + Vercel**. Design, Prompts, Sounds und Spielablauf bleiben erhalten. Ab Version 5 ersetzt `@metered-ca/realtime` (SDK 1.2.0 oder neuer) die bisherigen öffentlichen MQTT-Broker und die manuelle TURN-Eingabe. Kein eigenes Backend, keine Vercel Functions und keine Foto-Datenbank.
 
 ## Spielen
 
-1. Website öffnen, Namen eingeben und **Spiel erstellen** drücken.
-2. **Party Mode** zeigt Fotos nur beim Host; **Remote Mode** verteilt sie per WebRTC an alle.
-3. Der Host zeigt einen zehnstelligen Lobbycode oder teilt den Einladungslink. Freunde geben den Code ein und drücken **Beitreten**. Der Host sieht Name und Prüfkennung und muss jede Anfrage aktiv freigeben.
-4. Sobald mindestens zwei Personen in der Lobby sind, startet der Host den sichtbaren Countdown. Prompt lesen, Foto wählen. Wenn alle eingereicht haben: Trommelwirbel, Prompt noch einmal vorlesen, dann enthüllt der Host jedes Foto einzeln. Erst danach ist Voting möglich. Gewinner bekommt einen Punkt.
-5. Der Code gilt für die gesamte Partie. Die Browser-Tabs bleiben während der Partie geöffnet.
+1. Namen eingeben, Party oder Remote wählen, Spiel erstellen.
+2. Einladungslink/QR teilen oder den zehnstelligen Raumcode eingeben. Der Link enthält zusätzlich den öffentlichen Host-Schlüssel zur Prüfung des richtigen Hosts.
+3. Der Host vergleicht die Prüfkennung mit dem Freund und erlaubt oder verweigert den Beitritt. Vorher gibt es weder Spielstand noch Fotokanal.
+4. Prompt, lokale Fotoauswahl, Show mit einzeln enthüllten Bildern, Abstimmung, Punkte, nächste Runde funktionieren wie bisher.
+5. **Remote:** zugelassene Spieler erhalten die enthüllten Fotos auf ihren Geräten.
+6. **Party:** Spieler reichen per Handy ein und stimmen dort ab. Fotos erscheinen beim Host und auf separat bestätigten **Displays**. Zum Verbinden „Als Display beitreten“ wählen oder den Display-Link des Hosts öffnen. Displays zählen nicht als Spieler und können keine Spieleraktionen ausführen; maximal drei Displays.
 
-### Verbindung zwischen getrennten Netzen
+Musik und Sounds werden lokal über Web Audio erzeugt. Die Schrift ist lokal eingebunden. Keine KI-APIs, Analytics oder externen Sound-/Font-Aufrufe. Nach dem Update alle Geräte neu laden und eine neue Lobby erstellen; alte Lobbys sind nicht kompatibel.
 
-Falls auf einem Gerät „WebRTC-Verbindung konnte nicht hergestellt werden“ erscheint, brauchen die beteiligten Geräte möglicherweise TURN. Auf der Info-Seite unter „Technische Einstellungen für Betreiber“ kann **vor Spiel erstellen oder Beitreten** auf beiden Geräten eine vom TURN-Anbieter ausgestellte, kurzlebige Konfiguration eingetragen werden, zum Beispiel `{"urls":["turns:relay.example:443?transport=tcp"],"username":"zeitlich-begrenzt","credential":"zeitlich-begrenzt"}`. Danach eine neue Lobby erstellen und mit einem neuen Code erneut beitreten. Bei einem TURN-Anbieter fallen Verbindungs- und Verkehrsdaten an; seine Limits und Kosten gelten. Zugangsdaten bleiben im Arbeitsspeicher des Browsers und werden weder im Repository noch in der Einladung abgelegt. Für diese optionale Verbindung muss der Host selbst einen geeigneten TURN-Dienst bereitstellen oder Zugangsdaten von einem Dienst beziehen; die App kann solche Anmeldedaten ohne vertraulichen Server nicht automatisch ausstellen.
-
-Emoji-Reaktionen (😂 💀 🚩 👏) erscheinen bei allen freigegebenen Spielern; pro Gerät gilt ein Limit von einer Reaktion je 1,2 Sekunden. Comic-Avatare werden ohne Profildateien aus der Sitzungskennung abgeleitet. Im Remote Mode werden nur bereits enthüllte Bilder an Gäste geschickt, und vor dem Weitergehen wird deren Empfang bestätigt. Der Host bestimmt das Show-Tempo.
-
-Die selbst gehostete Schrift Fredoka ist als Fontsource-Paket eingebunden; beim Spielen wird kein externer Font-Dienst angefragt. Die Musik startet nach der Interaktion zum Erstellen oder Beitreten. 🎵 schaltet nur die Musik um, 🔊/🔇 schaltet sämtliche Sounds stumm. Musik und Effekte werden lokal mit der Web Audio API erzeugt; es gibt keine externen Sounddateien oder Lizenzabhängigkeiten.
-
-## Lokale Entwicklung
+## Lokal entwickeln
 
 ```sh
 npm install
-npm run dev
 ```
 
+Eine nicht eingecheckte `.env.local` mit **deinem bereits angelegten Publishable Key** erstellen:
+
+```dotenv
+VITE_METERED_API_KEY=pk_live_...
+```
+
+Das ist ein Platzhalter, kein echter Key. `.env.example` enthält ebenfalls ausschließlich einen Platzhalter. Dann:
+
 ```sh
+npm run dev
 npm test
 npm run typecheck
+npm run lint
 npm run build
 ```
 
-`dist/` enthält ausschließlich statische Dateien. Es gibt keine Environment Secrets. Die Hash-Routen `#/spiel`, `#/datenschutz` und `#/info` funktionieren auch auf statischen Hosts ohne spezielle Rewrite-Regeln. `robots.txt` und das Robots-Meta-Tag verhindern gewöhnliche Suchmaschinenindexierung, sind aber keine Zugangssperre.
+Ohne Variable erscheint beim Spielstart eine verständliche Fehlermeldung. Vite nach Änderungen an `.env.local` neu starten. Der Debugbereich ist ausschließlich im Development Build verfügbar. Dort stehen Verbindungszustände, temporäre Peer-ID, stabile App-ID, Freigabe, DataChannel, Reconnects und – wenn verfügbar – ausgewählte Candidate-Typen/direct/relay. Keine Schlüssel, Bildinhalte, SDP oder IP-Adressen werden von der App geloggt.
 
-## Vercel Deployment
+## Bestehendes Vercel-Projekt
 
-1. Das bestehende Repository `rasberryuser101/delete-this-` auf GitHub öffnen.
-2. [Vercel](https://vercel.com) öffnen.
-3. **Add New → Project** und das Repository importieren.
-4. **Framework Preset:** Vite.
-5. **Build Command:** `npm run build`.
-6. **Output Directory:** `dist`.
-7. **Deploy** klicken und die URL teilen.
+**Nicht zu Cloudflare migrieren und kein neues Backend anlegen.**
 
-`vercel.json` enthält die statische Build-Konfiguration. Netlify oder GitHub Pages können dieselben Builddateien hosten. Auf GitHub Pages funktioniert `base: './'` mit den Hash-Routen im Projektunterverzeichnis.
+1. Änderungen in das vorhandene GitHub-Repository `rasberryuser101/delete-this-` übernehmen.
+2. In Vercel das bestehende Projekt öffnen.
+3. Unter **Settings → Environment Variables** `VITE_METERED_API_KEY` mit dem eigenen Publishable Key setzen. Für **Production** und bei Bedarf **Preview/Development** aktivieren.
+4. Framework bleibt **Vite**, Build Command **`npm run build`**, Output Directory **`dist`**.
+5. Nach dem Setzen/Ändern der Variable **neu deployen**. Vite liest sie beim Build; ein alter Build übernimmt neue Variablen nicht nachträglich.
+6. URL teilen. Freunde brauchen keine Konten oder Konfiguration.
 
-## Technik und Privatsphäre
+Bei einer erstmaligen Vercel-Einrichtung: Repository auf GitHub → Vercel öffnen → Repository importieren → Vite → `npm run build` → `dist` → Variable setzen → Deploy.
 
-- Trystero nutzt zwei öffentliche MQTT-over-WSS-Broker (Mosquitto und HiveMQ) zur Peer-Erkennung. Die darüber ausgetauschten WebRTC-Verbindungsdaten sind mit einem aus App-ID und Lobbycode abgeleiteten Schlüssel verschlüsselt. Broker können technische Verbindungsdaten sehen, erhalten aber keine Fotos oder Spielinhalte. Es gibt weiterhin keine Datenbank und keinen eigenen Signaling-Server.
-- Mehrere öffentliche STUN-Endpunkte von Google und Cloudflare sind in `src/room.ts` konfiguriert. Über einen Rollen- und Freigabe-Handshake akzeptiert der Host nur aktiv bestätigte Gäste; Prüfkennung und zehnstelliger Code erschweren Fehlbeitritte. Beitrittsversuche werden pro Lobby begrenzt. Die Spieldaten bleiben hostzentriert. Optional eingegebener TURN leitet ausschließlich bereits verschlüsselte WebRTC-Pakete weiter; der Relay-Betreiber verarbeitet dabei technisch notwendige Verbindungs- und Verkehrsdaten.
-- Originalfotos werden lokal per Canvas neu encodiert, höchstens 1280 px Kantenlänge und 450 KB. EXIF/GPS der Originaldatei werden nicht übernommen. Nur die neu erzeugten WebP/JPEG-Bytes werden über verschlüsselte RTCDataChannels geschickt; Trystero übernimmt Chunking und Flusskontrolle. Empfänger prüfen Signatur, MIME, Größe und Abmessungen und bestätigen erst danach den Upload. Unterbrochene Fotos werden automatisch einmal wiederholt.
-- Keine Foto-Uploads über HTTP, keine Fotos im `localStorage`, IndexedDB, Service Worker Cache, in Logs oder Cloud Storage. Bilder liegen nur temporär im RAM. Bei Rundenende oder Verlassen werden Object URLs freigegeben. Nur der Anzeigename wird lokal gespeichert.
-- Keine Analytics, kein Tracking, keine KI-APIs. Der Hostinganbieter empfängt beim Seitenaufruf technisch notwendige Verbindungsdaten.
+`vercel.json` bleibt unverändert; `dist/` ist rein statisch. Hash-Routen, `robots.txt` mit `Disallow: /` und `noindex,nofollow` bleiben erhalten. Diese Suchmaschinenhinweise sind keine Zugangssperre.
 
-## Grenzen
+### Metered-Konfiguration und Grenzen des Publishable Keys
 
-Der zehnstellige Code ist eine Einladung an Freunde, keine Benutzerkonten-Authentifizierung. Zusätzlich muss der Host jede Anfrage freigeben; ein erratener Code reicht deshalb nicht für den Spielbeitritt. Die Begrenzung von Beitrittsanfragen läuft auf dem Hostgerät und ersetzt keinen serverseitigen Schutz gegen massenhafte Verbindungsversuche. Ohne TURN klappt WebRTC in restriktiven Mobilfunk- und Firmennetzen manchmal nicht; mit TURN sind Verfügbarkeit und Durchsatz vom externen Anbieter abhängig. Fällt ein einzelner MQTT-Broker aus, stehen weitere Broker bereit; bei einem breiten Ausfall öffentlicher Broker können neue Verbindungen trotzdem scheitern. Bei Tab-Schließung oder Reload geht die Partie verloren: Es gibt absichtlich keine Speicherung oder Wiederaufnahme.
+Der Key wird **nur** über `import.meta.env.VITE_METERED_API_KEY` gelesen. Keine echten Keys in Source, README, Tests oder Git speichern. `.env*` werden bis auf `.env.example` ignoriert.
 
+**Eine VITE-Variable wird in das öffentliche Browser-Bundle eingebaut. Ein Publishable Key ist ausdrücklich kein geheimes Serverpasswort.** Er wird nicht in der normalen Oberfläche angezeigt oder von der App geloggt, kann aber von Websitebesuchern aus dem Browser gelesen werden. Niemals einen Metered Secret/Signing Key einsetzen.
 
-## Version 4 und Sicherheit
+Laut offizieller Metered-Dokumentation benötigt automatische TURN-Injection einen **aktiven TURN-Dienst im Metered-Konto** und die eingeschaltete Option **Auto-inject TURN credentials**. Ein Publishable Key allein beweist nicht, dass TURN aktiv ist. Die App überschreibt die vom SDK gelieferten ICE-Server nicht und bevorzugt direkte Verbindungen, erlaubt aber TURN.
 
-Beide Geräte nach einem Update neu laden und eine neue Lobby erstellen. Version 4 verwendet eine eigene Vermittlungskennung und kann nicht mit Version 3 spielen.
+Den Key auf Channels `game-*` begrenzen; benötigt werden `subscribe`, `presence` und `send` (die App verwendet keinen Broadcast über `publish`). Einrichtungsberechtigungen sind im Metered-Dashboard zu prüfen. Publishable Keys sind laut Dokumentation **nicht nach Website-Origin beschränkt**. Kopierte Keys können daher fremde Nutzung und TURN-Kontingentverbrauch ermöglichen. Kontingente/Kosten im Konto prüfen und bei Missbrauch den Key widerrufen/ersetzen. App-seitige Freigaben schützen die Spielfotos, ersetzen aber keine serverseitigen Kontingent- und Missbrauchsgrenzen. Ohne Backend gibt es keine pro Benutzer ausgestellten Server-Tokens.
 
-- Keine Konten- oder Profilfoto-Funktion: Die Emoji-Avatare erzeugen keine zusätzlichen Bilddateien.
-- Der Host kennt die Zuordnung der Fotos; die Gastansicht zeigt keine fremden Urheber oder Stimmziele. Screenshots und Rückschlüsse aus dem Bildinhalt kann die App nicht verhindern.
-- Admission-Gates gelten für Spielnachrichten, Bilder und Reaktionen; nach dem Entfernen wird die Freigabe zurückgezogen. Das ersetzt keine unabhängige Sicherheitsprüfung.
-- Die Verbindungen zu den öffentlich zugänglichen Testbrokern sind keine Garantie für eine Verbindung zwischen zwei Geräten. Öffentlich heißt außerdem, dass technische Vermittlungskennungen beobachtet werden können. Verbindungsangebote sind mit dem Lobby-Geheimnis verschlüsselt.
-- Eine zuverlässige Mobilfunk-Verbindung braucht gegebenenfalls einen dauerhaft erreichbaren TURN-Dienst. Der ist nicht automatisch eingerichtet. Ohne Anbieter-Zugang oder eigenen Dienst kann die App ihn nicht bereitstellen.
-- Die Betreiber der Hilfsdienste können technische Verbindungsdaten protokollieren. Keine pauschale Zusicherung über deren Speicherfristen oder Serverstandorte.
+Offizielle Dokumentation:
+- [Authentifizierung und automatische TURN-Injection](https://www.metered.ca/docs/realtime-messaging/sdk-javascript/guides/authentication/)
+- [MeteredPeer](https://www.metered.ca/docs/realtime-messaging/sdk-javascript/api-reference/metered-peer/)
+- [Reconnect und connection-reset](https://www.metered.ca/docs/realtime-messaging/sdk-javascript/guides/reconnect-best-practices/)
+
+## Datenwege
+
+| Daten | Weg |
+|---|---|
+| Webseite | Vercel → Browser; technisch notwendige Abrufdaten beim Host |
+| Verbindungsdaten, Beitritte, Freigaben, Namen, Prompt, Runde, Stimmen, Punkte | Kleine validierte Nachrichten über Metered Realtime/Signaling; Dienst ist hierbei ein Datenempfänger |
+| Foto | File Picker → Canvas (JPEG/WebP, maximal 1280 px, Ziel bis 400 KB, hartes Empfangslimit 1 MB) → RAM → eigener zuverlässiger RTCDataChannel → bestätigtes Spielgerät |
+| Bei blockierter Direktverbindung | Derselbe Ende-zu-Ende-verschlüsselte WebRTC-Verkehr über Metered TURN; keine Bilddateien im Messaging/HTTP/Cloud Storage |
+
+Fotos werden nie als JSON/Base64 über `peer.send`, `peer.sendTo`, WebSocket, HTTP, fetch, FormData oder REST verschickt. Die App hat keine solchen alternativen Bildpfade. QR-Codes enthalten nur Einladungslinks und werden lokal auf Canvas gezeichnet. Originaldateien werden nicht versendet; Canvas-Neucodierung übernimmt kein EXIF/GPS.
+
+Lokal gespeichert werden Spieler-ID, separate Display-ID und Anzeigename; Toneinstellungen dürfen ebenfalls lokal bleiben. Fotos, Blob URLs, Chunks und Foto-Hashes werden nicht persistiert. Bild-/Chunk-Referenzen und Object URLs werden nach der Runde bzw. beim Verlassen aufgeräumt. Das ist keine garantierte physische Speicherlöschung durch das Betriebssystem. Freigegebene Mitspieler können Screenshots erstellen; der Host kennt die Urheber.
+
+## Wiederverbinden
+
+Die App-ID und die temporäre Metered-Peer-ID sind getrennt. Eine RAM-basierte Signaturidentität bindet Wiederanmeldungen an denselben Teilnehmer; die öffentlich bekannte Spieler-ID allein reicht nicht aus. Der Host behält getrennte Spieler einschließlich Punkten und Einreichungen mindestens fünf Minuten (bis zum Entfernen/Spielende). Ein überlebender Browser-Tab kann mit neuer Peer-ID ohne neue Freigabe weiterarbeiten.
+
+Bei `connection-reset` werden alter Kanal, Listener und Transfers entfernt. Genau die vom SDK als impolite bestimmte Seite öffnet auf der **neuen** PeerConnection den Fotokanal; die andere nimmt `data-channel` entgegen. Sichtbarkeit, `pageshow`, Online/Offline-Ereignisse und regelmäßige Zustandsprüfungen unterstützen die SDK-Wiederverbindung. Bei längerem Stillstand wird die Metered-Sitzung neu aufgebaut, der Spielstand bleibt im Controller erhalten.
+
+**Browser-Reload ist anders als kurzzeitiges Sperren:** RAM-Schlüssel gehen beim echten Reload verloren. Derselbe Spieler/dasselbe Display braucht deshalb eine erneute Host-Freigabe. Spieler-ID und Punktestand können erhalten bleiben, private Bilder kommen nicht aus einem Browser-Cache zurück. Bei einem Display-Reload werden nach Freigabe nur aktuelle öffentliche Zustände und bereits enthüllte Fotos erneut übertragen. Reload/Schließen/OS-Verwerfen des **Host-Tabs** beendet die Partie; ohne persistente Host-Speicherung oder Backend gibt es keine Host-Migration.
+
+Verfügbarkeit, Mobilfunk-/Firmenfirewalls, iOS-Hintergrundregeln, Browser-Prozessbeendigung und Dienstkontingente können weiterhin Verbindungen verhindern. Es gibt keine Zusicherung „in jedem Netzwerk“ oder „unangreifbar“. Einladungslinks prüfen den mitgeteilten Host-Schlüssel; bei manueller Code-Eingabe wird der erste gültig signierte Host beim ersten Beitritt vertraut. Den Code privat teilen und Prüfkennungen vergleichen. Bereits empfangene Bilder lassen sich bei entfernten Mitspielern nicht zurückrufen.
+
+Details und die konkrete manuelle Gerätetestliste stehen in [NETWORK_MIGRATION.md](NETWORK_MIGRATION.md).

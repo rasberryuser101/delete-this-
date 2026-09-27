@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, nextReveal, reveal, submitPhoto, viewFor } from '../src/game';
 import { CATEGORIES, PROMPTS, pickPrompt } from '../src/prompts';
-function start() { let g = createGame('Host','party'); g = joinPlayer(g,{id:'guest',name:'Gast',score:0,connected:true}); return nextRound(g,['Chaos'],[],()=>0); }
+function start() { let g = createGame('Host','PARTY'); g = joinPlayer(g,{id:'guest',name:'Gast',score:0,connected:true}); return nextRound(g,['Chaos'],[],()=>0); }
 describe('Spielablauf', () => {
   it('spielt eine vollständige Runde und vergibt genau einen Punkt', () => {
     let g = start(); expect(g.phase).toBe('submit');
@@ -21,11 +21,11 @@ describe('Spielablauf', () => {
     expect(next.photos).toEqual([]); expect(next.votes).toEqual({}); expect(next.round).toBe(2);
     expect(next.players.reduce((sum,p)=>sum+p.score,0)).toBe(1);
   });
-  it('begrenzt auf acht und entfernt getrennte Lobby-Gäste', () => {
-    let g = createGame('Host','remote'); for(let i=0;i<7;i++) g=joinPlayer(g,{id:`g${i}`,name:`Gast ${i}`,score:0,connected:true});
+  it('begrenzt auf zehn und entfernt getrennte Lobby-Gäste', () => {
+    let g = createGame('Host','REMOTE'); for(let i=0;i<9;i++) g=joinPlayer(g,{id:`g${i}`,name:`Gast ${i}`,score:0,connected:true});
     expect(()=>joinPlayer(g,{id:'extra',name:'Extra',score:0,connected:true})).toThrow();
-    g=disconnectPlayer(g,'g0'); expect(g.players).toHaveLength(7);
-    expect(joinPlayer(g,{id:'extra',name:'Extra',score:0,connected:true}).players).toHaveLength(8);
+    g=disconnectPlayer(g,'g0'); expect(g.players).toHaveLength(9);
+    expect(joinPlayer(g,{id:'extra',name:'Extra',score:0,connected:true}).players).toHaveLength(10);
   });
   it('verhindert zweite Einreichung und ungültige Stimmen', () => {
     let g=start(); g=submitPhoto(g,'host','a'); expect(()=>submitPhoto(g,'host','c')).toThrow();

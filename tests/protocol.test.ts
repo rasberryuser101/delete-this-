@@ -4,7 +4,7 @@ import { isSafeImage, MAX_EDGE, MAX_IMAGE_BYTES } from '../src/image';
 import { createGame } from '../src/game';
 describe('Bildgrenzen und Nachrichten',()=>{
   it('begrenzt die Kante und die zu übertragenden Bytes',()=>{
-    expect(MAX_EDGE).toBe(1280); expect(MAX_IMAGE_BYTES).toBeLessThanOrEqual(450_000);
+    expect(MAX_EDGE).toBe(1280); expect(MAX_IMAGE_BYTES).toBeLessThanOrEqual(1_000_000);
     expect(isSafeImage(new Uint8Array([0xff,0xd8,0xff]),'image/jpeg')).toBe(true);
     expect(isSafeImage(new Uint8Array(MAX_IMAGE_BYTES+1),'image/jpeg')).toBe(false);
   });
@@ -20,7 +20,7 @@ describe('Bildgrenzen und Nachrichten',()=>{
     expect(decodeMessage(encoded)).toEqual({type:'vote',photoId:'foto',roundId:'runde'});
   });
   it('verwirft manipulierte Reveal-Indizes und fremde Reaktionswerte',()=>{
-    const game=createGame('Host','party');
+    const game=createGame('Host','PARTY');
     expect(validateMessage({type:'sync',you:'host',game})).not.toBeNull();
     expect(validateMessage({type:'sync',you:'host',game:{...game,revealIndex:8}})).toBeNull();
     expect(validateMessage({type:'sync',you:'host',game:{...game,revealIndex:-2}})).toBeNull();
