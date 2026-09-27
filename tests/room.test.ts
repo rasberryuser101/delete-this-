@@ -1,11 +1,9 @@
-import { describe,expect,it,vi } from 'vitest';
-import { SerializationType, type Peer } from 'peerjs';
-import { connectToRoom,makeRoomCode,normalizeRoomCode,peerIdFor,peerOptions,roomLink } from '../src/room';
+import { describe,expect,it } from 'vitest';
+import { lobbyConfig,makeRoomCode,normalizeRoomCode,parseHandshake,parsePhotoMetadata,roomLink,STUN_SERVERS } from '../src/room';
 describe('Lobbycodes',()=>{
   it('erzeugt kurze, eindeutige und gut lesbare Codes',()=>{
     const code=makeRoomCode(new Uint8Array([0,1,2,3,4,5]));
     expect(code).toHaveLength(6); expect(code).toMatch(/^[A-HJ-NP-Z2-9]{6}$/);
-    expect(peerIdFor(code)).toBe(`delete-this-${code}`);
   });
   it('nimmt Code oder teilbaren Link an und verwirft ungültige Codes',()=>{
     expect(normalizeRoomCode('ab-cd-ef')).toBe('ABCDEF');
@@ -13,15 +11,19 @@ describe('Lobbycodes',()=>{
     expect(roomLink('ABCDEF',{origin:'https://example.org',pathname:'/'})).toBe('https://example.org/#/spiel?code=ABCDEF');
     expect(()=>normalizeRoomCode('111111')).toThrow();
   });
-  it('benutzt das tatsächlich registrierte rohe PeerJS-Format',()=>{
-    const connect=vi.fn(()=>({}));
-    connectToRoom({connect} as unknown as Peer,'ABCDEF');
-    expect(SerializationType.None).toBe('raw');
-    expect(connect).toHaveBeenCalledWith('delete-this-ABCDEF',{serialization:'raw'});
+  it('prüft Rollen und Bild-Metadaten vor der WebRTC-Verarbeitung',()=>{
+    expect(parseHandshake({version:1,role:'guest',name:'Chris'})).toEqual({version:1,role:'guest',name:'Chris'});
+    expect(parseHandshake({version:1,role:'guest',name:''})).toBeNull();
+    expect(parseHandshake({version:1,role:'admin',name:'Chris'})).toBeNull();
+    expect(parsePhotoMetadata({version:1,id:'foto',roundId:'runde',bytes:400_000,mime:'image/jpeg'})).not.toBeNull();
+    expect(parsePhotoMetadata({version:1,id:'foto',roundId:'runde',bytes:500_000,mime:'image/jpeg'})).toBeNull();
+    expect(parsePhotoMetadata({version:1,id:'<script>',roundId:'runde',bytes:10,mime:'image/jpeg'})).toBeNull();
   });
-  it('konfiguriert ausschließlich STUN ohne TURN',()=>{
-    const options=peerOptions(); expect(options.host).toBe('0.peerjs.com');
-    expect(options.config?.iceServers).toEqual([{urls:'stun:stun.l.google.com:19302'}]);
-    expect(()=>peerOptions('turn:example.org')).toThrow();
+  it('nutzt redundante, direkte WebRTC-Erkennung ohne TURN',()=>{
+    const config=lobbyConfig('ABCDEF');
+    expect(config.relayConfig.redundancy).toBeGreaterThanOrEqual(5);
+    expect(config.rtcConfig.iceServers).toEqual(STUN_SERVERS);
+    expect(JSON.stringify(config.rtcConfig.iceServers)).not.toContain('turn:');
+    expect(config.password).toContain('ABCDEF');
   });
 });
