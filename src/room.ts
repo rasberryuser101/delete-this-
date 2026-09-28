@@ -1,4 +1,3 @@
-import { MeteredPeer, type RemotePeer } from '@metered-ca/realtime';
 import { makeIdentity, storedIdentity, verifyIdentity, type DeviceIdentity, type Role } from './identity';
 import { parseNetwork, type NetworkControl } from './networkProtocol';
 import { decodeMessage, encodeMessage } from './protocol';
@@ -6,243 +5,307 @@ import { PhotoChannel } from './photoChannel';
 import { withDeadline, type PhotoAction, type PhotoMetadata } from './transfer';
 import type { RequestAction } from './actions';
 export { parsePhotoMetadata } from './transfer';
-export const BUILD='5.0 · Metered-Verbindungen';
-export const CONNECTION_ERROR='Lobby nicht gefunden oder Verbindung fehlgeschlagen. Code prüfen und erneut versuchen.';
-export const NETWORK_ERROR='Verbindung fehlgeschlagen. Bitte Internet prüfen und erneut versuchen.';
-export const JOIN_TIMEOUT_MS=90_000;
-const ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export type LobbyRole=Role;
-export type LobbyHandshake={version:5;role:Role;name?:string;publicKey?:string;check?:string};
-export type LobbyOptions={code:string;role:Role;name?:string;identity?:DeviceIdentity;expectedHostKey?:string;signal?:AbortSignal;
-  authorize?:(id:string,remote:LobbyHandshake)=>void|Promise<void>;
-  onStage?:(stage:'approval'|'connecting',id:string)=>void;onJoinError?:(id:string,error:string)=>void;
-  onStatus?:(status:string)=>void;
-  canPhoto?:(id:string,direction:'send'|'receive',meta:PhotoMetadata,visibility:'PRIVATE'|'PUBLIC')=>boolean};
-export type LobbySession={selfId:string;publicKey?:string;control:RequestAction<string,{ok:true}>;photo:PhotoAction;
-  room:{onPeerJoin:((id:string)=>void)|null;onPeerLeave:((id:string)=>void)|null;leave:()=>Promise<void>;getPeers:()=>Record<string,{close:()=>void}>};
-  relayCount:()=>number;diagnostics?:()=>Promise<string>;recover?:()=>Promise<void>;clearTransfers?:()=>void};
-export function makeRoomCode(bytes?:Uint8Array):string {
- if(bytes){if(bytes.length!==10)throw new Error('Zehn Zufallsbytes erwartet.');return Array.from(bytes,b=>ALPHABET[b%ALPHABET.length]).join('');}
- // Rejection sampling avoids modulo bias (alphabet has 31 characters).
- let result='';while(result.length<10)for(const b of crypto.getRandomValues(new Uint8Array(16))){if(b<Math.floor(256/ALPHABET.length)*ALPHABET.length)result+=ALPHABET[b%ALPHABET.length];if(result.length===10)break;}return result;
-}
-export function normalizeRoomCode(input:string):string {
- let code=input.trim();if(/^https?:\/\//.test(code)){try{code=new URLSearchParams(new URL(code).hash.split('?')[1]??'').get('code')??'';}catch{throw new Error('Ungültiger Einladungslink.');}}
- code=code.toUpperCase().replace(/[\s-]/g,'');if(!/^[A-HJ-NP-Z2-9]{10}$/.test(code))throw new Error('Bitte den zehnstelligen Lobbycode eingeben.');return code;
-}
-export const roomLink=(code:string,location:Pick<Location,'origin'|'pathname'>,display=false,hostKey='')=>`${location.origin}${location.pathname}#/spiel?code=${normalizeRoomCode(code)}${display?'&display=1':''}${/^04[\da-f]{128}$/.test(hostKey)?`&host=${hostKey}`:''}`;
-export function parseHandshake(value:unknown):LobbyHandshake|null {
- if(!value||typeof value!=='object')return null;const v=value as LobbyHandshake;
- return v.version===5&&['HOST','PLAYER','DISPLAY'].includes(v.role)&&(v.role==='HOST'||(typeof v.name==='string'&&v.name.trim().length>0&&v.name.length<=30))?v:null;
-}
-export function meteredKey():string {
- const key=import.meta.env.VITE_METERED_API_KEY;
- if(!key||key==='pk_live_REPLACE_ME'||!key.startsWith('pk_'))throw new Error(import.meta.env.DEV?'Entwicklerhinweis: VITE_METERED_API_KEY in .env.local setzen und Vite neu starten.':'Der Multiplayer ist noch nicht eingerichtet. Der Betreiber muss die Metered-Variable in Vercel setzen und neu deployen.');
- return key;
-}
-type Binding={id:string;key:string;role:Role;remoteId:string;online:boolean};
-/** Only Metered control envelopes cross this function. Binary/photo fields are rejected. */
-export async function sendControl(peer:Pick<MeteredPeer,'sendTo'>,id:string,message:NetworkControl){const checked=parseNetwork(message);if(!checked)throw new Error('Ungültige Steuernachricht.');await peer.sendTo(id,checked);}
-export async function createLobbySession(options:LobbyOptions):Promise<LobbySession>{
- const apiKey=meteredKey();
- if(!globalThis.isSecureContext||typeof RTCPeerConnection==='undefined')throw new Error('Bitte die HTTPS-Seite in Safari oder Chrome öffnen.');
- const identity=options.identity??await makeIdentity(options.role==='HOST'?'host':storedIdentity(options.role));
- const lobby=new MeteredLobby(options,identity,()=>new MeteredPeer({apiKey}));
- try{await withDeadline(()=>lobby.start(),45_000,options.signal);return lobby.session;}catch{await lobby.session.room.leave();throw new Error(NETWORK_ERROR);}
-}
-/** Exported for deterministic SDK-event tests; runtime still uses the official MeteredPeer. */
-export class MeteredLobby {
- readonly session:LobbySession;
- private peer:MeteredPeer;
- private records=new Map<string,Binding>();
- private remoteToId=new Map<string,string>();
- private remotes=new Map<string,RemotePeer>();
- private transports=new Map<string,PhotoChannel>();
- private channelDetach=new Map<string,()=>void>();
- private detach=new Map<string,()=>void>();
- private pending=new Map<string,{remoteId:string;resolve:()=>void;reject:()=>void}>();
- private admitting=new Set<string>();
- private blocked=new Set<string>();
- private hostKey='';
- private hostRemote='';
- private closed=false;
- private generation=0;
- private resets=0;
- private lastReset='';
- private recovering:Promise<void>|null=null;
- private health:ReturnType<typeof setInterval>|undefined;
- private lastTraffic=Date.now();
- private badSince=0;
- private lastRestart=0;
- private announced=new Set<string>();
- private inboundRate=new Map<string,{at:number;count:number}>();
- private joinAttempts:number[]=[];
- private lifetime=new AbortController();
- private readonly channel:string;
- constructor(private options:LobbyOptions,private identity:DeviceIdentity,private factory:()=>MeteredPeer){
-  this.channel=`game-${normalizeRoomCode(options.code)}`;this.peer=factory();
-  this.session={selfId:identity.id,publicKey:identity.publicKey,control:{onRequest:null,request:async(data,opts)=>{
-   const msg=decodeMessage(data);const binding=this.records.get(opts.target);if(!msg||!binding||!binding.online)throw new Error('Nicht freigegeben oder getrennt.');
-   const requestId=crypto.randomUUID();
-   await new Promise<void>((resolve,reject)=>{
-    const cleanup=()=>{clearTimeout(timer);opts.signal?.removeEventListener('abort',cancel);this.pending.delete(requestId);};
-    const cancel=()=>{cleanup();reject(new Error('Keine Antwort. Bitte erneut versuchen.'));};
-    const timer=setTimeout(cancel,opts.timeoutMs??10_000);opts.signal?.addEventListener('abort',cancel,{once:true});
-    this.pending.set(requestId,{remoteId:binding.remoteId,resolve:()=>{cleanup();resolve();},reject:cancel});
-    if(opts.signal?.aborted){cancel();return;}
-    void sendControl(this.peer,binding.remoteId,{type:'CONTROL',requestId,message:msg}).catch(cancel);
-   });return {ok:true};
-  }},photo:{onRequest:null,request:async(data,opts)=>{const binding=this.records.get(opts.target),transport=binding&&this.transports.get(binding.remoteId);if(!binding?.online||!transport)throw new Error('Fotoverbindung wird wiederhergestellt …');return transport.request(data,opts);}},
-   room:{onPeerJoin:null,onPeerLeave:null,leave:()=>this.close(),getPeers:()=>Object.fromEntries([...this.records].map(([id])=>[id,{close:()=>this.revoke(id)}]))},
-   relayCount:()=>this.peer.state==='joined'?1:0,diagnostics:()=>this.diagnostics(),recover:()=>this.recover(),clearTransfers:()=>{for(const t of this.transports.values())t.clear();}};
- }
- private proof(id:string,role:Role,remoteId:string){return `${this.channel}|${id}|${role}|${remoteId}`;}
- private async announce(remoteId:string){
-  if(this.closed||this.peer.state!=='joined')return;
-  if(this.options.role==='HOST')await sendControl(this.peer,remoteId,{type:'HOST',id:this.identity.id,publicKey:this.identity.publicKey,signature:await this.identity.sign(this.proof(this.identity.id,'HOST',this.peer.peerId!))});
- }
- private async requestJoin(remoteId:string){
-  if(this.options.role==='HOST'||this.admitting.has(remoteId))return;
-  this.admitting.add(remoteId);
-  try{await sendControl(this.peer,remoteId,{type:'JOIN',id:this.identity.id,role:this.options.role,name:this.options.name?.trim().slice(0,30)||'Display',publicKey:this.identity.publicKey,signature:await this.identity.sign(this.proof(this.identity.id,this.options.role,this.peer.peerId!))});}
-  catch{this.admitting.delete(remoteId);}
- }
- async start(){this.attach();await this.peer.join(this.channel);if(this.closed)return;this.health=setInterval(()=>void this.checkHealth(),5000);
-  if(typeof window!=='undefined'){window.addEventListener('online',this.wake);window.addEventListener('offline',this.offline);window.addEventListener('pageshow',this.wake);document.addEventListener('visibilitychange',this.visible);}
- }
- private attach(){
-  const peer=this.peer,generation=this.generation;
-  peer.on('peer-joined',({peer:remote})=>{if(this.closed||generation!==this.generation)return;
-   // Cap resource use in the application; service-level quotas remain necessary.
-   if(this.remotes.size>=24){remote.pc.close();return;}
-   this.remotes.set(remote.id,remote);
-   const data=({channel}:{channel:RTCDataChannel})=>this.bindChannel(remote,channel);
-   const reset=()=>{this.resets++;this.lastReset=new Date().toISOString();this.dropTransport(remote.id);this.setOffline(remote.id);this.openChannel(remote);};
-   remote.on('data-channel',data);remote.on('connection-reset',reset);
-   this.detach.set(remote.id,()=>{remote.off('data-channel',data);remote.off('connection-reset',reset);});
-   void this.announce(remote.id).catch(()=>{});
-  });
-  peer.on('peer-left',({peer:remote})=>{if(generation!==this.generation)return;this.dropTransport(remote.id);this.setOffline(remote.id);this.detach.get(remote.id)?.();this.detach.delete(remote.id);this.remotes.delete(remote.id);this.admitting.delete(remote.id);this.announced.delete(remote.id);this.inboundRate.delete(remote.id);});
-  peer.on('data',({senderPeerId,data,kind})=>{if(this.closed||generation!==this.generation||kind!=='direct'||!this.remotes.has(senderPeerId))return;
-   const now=Date.now(),rate=this.inboundRate.get(senderPeerId);if(!rate||now-rate.at>1000)this.inboundRate.set(senderPeerId,{at:now,count:1});else if(++rate.count>40)return;
-   const msg=parseNetwork(data);if(msg){this.lastTraffic=now;void this.handle(senderPeerId,msg,generation).catch(()=>{});}
-  });
-  peer.on('state-change',({to})=>{if(generation!==this.generation||this.closed)return;
-   if(to==='reconnecting'||to==='closed'){optionsStatus(this.options,'Verbindung wird wiederhergestellt …');for(const id of this.remotes.keys())this.setOffline(id);}
-   if(to==='joined'){this.lastTraffic=Date.now();for(const r of this.remotes.values()){void this.announce(r.id).catch(()=>{});this.openChannel(r);}}
-  });
-  peer.on('error',()=>{if(generation===this.generation&&!this.closed)optionsStatus(this.options,'Verbindung fehlgeschlagen. Erneut versuchen.');});
- }
- private async handle(remoteId:string,msg:NetworkControl,generation:number){
-  if(msg.type==='HOST'&&this.options.role!=='HOST'){
-   if((this.options.expectedHostKey&&msg.publicKey!==this.options.expectedHostKey)||(this.hostKey&&msg.publicKey!==this.hostKey)||msg.id!=='host'||!await verifyIdentity(msg.publicKey,msg.signature,this.proof(msg.id,'HOST',remoteId)))return;
-   if(generation!==this.generation||this.closed)return;
-   if(this.hostRemote&&this.hostRemote!==remoteId&&this.remotes.has(this.hostRemote))return;
-   if(this.records.get('host')?.remoteId===remoteId&&this.records.get('host')?.online)return;
-   this.hostKey=msg.publicKey;this.hostRemote=remoteId;
-   await this.options.authorize?.('host',{version:5,role:'HOST',publicKey:msg.publicKey});if(!this.records.has('host'))this.options.onStage?.('approval','host');await this.requestJoin(remoteId);return;
+
+export const BUILD = '6.0 · Cloudflare';
+export const CONNECTION_ERROR = 'Lobby nicht gefunden oder Verbindung fehlgeschlagen. Link prüfen und erneut versuchen.';
+export const NETWORK_ERROR = 'Verbindung fehlgeschlagen. Internet prüfen und erneut versuchen.';
+export const JOIN_TIMEOUT_MS = 90_000;
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const STUN: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
+export type LobbyRole = Role;
+export type LobbyHandshake = { version: 5; role: Role; name?: string; publicKey?: string; check?: string };
+export type LobbyOptions = { code: string; role: Role; name?: string; identity?: DeviceIdentity; expectedHostKey?: string; signal?: AbortSignal;
+  authorize?: (id: string, remote: LobbyHandshake) => void | Promise<void>;
+  onStage?: (stage: 'approval' | 'connecting', id: string) => void; onJoinError?: (id: string, error: string) => void;
+  onStatus?: (status: string) => void;
+  canPhoto?: (id: string, direction: 'send' | 'receive', meta: PhotoMetadata, visibility: 'PRIVATE' | 'PUBLIC') => boolean };
+export type LobbySession = { selfId: string; publicKey?: string; control: RequestAction<string, { ok: true }>; photo: PhotoAction;
+  room: { onPeerJoin: ((id: string) => void) | null; onPeerLeave: ((id: string) => void) | null; leave: () => Promise<void>; getPeers: () => Record<string, { close: () => void }> };
+  relayCount: () => number; diagnostics?: () => Promise<string>; recover?: () => Promise<void>; clearTransfers?: () => void };
+
+export function makeRoomCode(bytes?: Uint8Array): string {
+  if (bytes) { if (bytes.length !== 10) throw new Error('Zehn Zufallsbytes erwartet.'); return Array.from(bytes, b => ALPHABET[b % ALPHABET.length]).join(''); }
+  let result = '';
+  while (result.length < 10) for (const b of crypto.getRandomValues(new Uint8Array(16))) {
+    if (b < Math.floor(256 / ALPHABET.length) * ALPHABET.length) result += ALPHABET[b % ALPHABET.length];
+    if (result.length === 10) break;
   }
-  if(msg.type==='JOIN'&&this.options.role==='HOST'){
-   if(this.remoteToId.has(remoteId)&&this.remoteToId.get(remoteId)!==msg.id)return;
-   if(this.admitting.has(remoteId)||this.blocked.has(msg.id)||this.blocked.has(remoteId))return;
-   const now=Date.now();this.joinAttempts=this.joinAttempts.filter(t=>now-t<60_000);if(this.joinAttempts.length>=24)return;this.joinAttempts.push(now);
-   this.admitting.add(remoteId);
-   try {
-    if(msg.id==='host'||!await verifyIdentity(msg.publicKey,msg.signature,this.proof(msg.id,msg.role,remoteId)))return;
-    if(generation!==this.generation||this.closed)return;
-    const existing=this.records.get(msg.id);
-    if(existing&&existing.role!==msg.role){await sendControl(this.peer,remoteId,{type:'DENIED'});return;}
-    // A copied playerId is not a credential. Different keys need explicit reapproval.
-    if(existing&&(existing.key!==msg.publicKey||existing.role!==msg.role)){
-     if(existing.online){await sendControl(this.peer,remoteId,{type:'DENIED'});return;}
-     await this.options.authorize?.(msg.id,{version:5,role:msg.role,name:msg.name,check:msg.publicKey.slice(-12).toUpperCase()});
-    } else if(!existing)await this.options.authorize?.(msg.id,{version:5,role:msg.role,name:msg.name,check:msg.publicKey.slice(-12).toUpperCase()});
-    if(generation!==this.generation||this.closed||!this.remotes.has(remoteId)||this.blocked.has(msg.id))return;
-    this.setBinding(msg.id,msg.publicKey,msg.role,remoteId);
-    await sendControl(this.peer,remoteId,{type:'APPROVED',id:msg.id,role:msg.role});this.openChannel(this.remotes.get(remoteId)!);
-   }catch{if(generation!==this.generation||this.closed)return;await sendControl(this.peer,remoteId,{type:'DENIED'}).catch(()=>{});this.blocked.add(remoteId);}
-   finally{this.admitting.delete(remoteId);}return;
-  }
-  if(msg.type==='APPROVED'&&this.options.role!=='HOST'&&remoteId===this.hostRemote&&msg.id===this.identity.id&&msg.role===this.options.role){
-   this.admitting.delete(remoteId);if(!this.records.has('host'))this.options.onStage?.('connecting','host');this.setBinding('host',this.hostKey,'HOST',remoteId);this.openChannel(this.remotes.get(remoteId)!);optionsStatus(this.options,'Freigegeben. Verbinde …');return;
-  }
-  if(msg.type==='DENIED'&&remoteId===this.hostRemote){this.options.onJoinError?.('host','Der Host hat die Anfrage abgelehnt.');return;}
-  const id=this.remoteToId.get(remoteId),binding=id&&this.records.get(id);if(!binding||binding.remoteId!==remoteId||!binding.online)return;
-  if(msg.type==='ACK'){const p=this.pending.get(msg.requestId);if(p?.remoteId===remoteId){if(msg.ok)p.resolve();else p.reject();}return;}
-  if(msg.type==='CONTROL'){
-   let ok=false;try{await this.session.control.onRequest?.(encodeMessage(msg.message),{peerId:binding.id,signal:this.lifetime.signal});ok=true;}catch{/* Don't reflect errors or user payloads into messages/logs. */}
-   await sendControl(this.peer,remoteId,{type:'ACK',requestId:msg.requestId,ok});
-  }
- }
- private setBinding(id:string,key:string,role:Role,remoteId:string){
-  const old=this.records.get(id);if(old&&old.remoteId===remoteId&&old.key===key){this.remoteToId.set(remoteId,id);return;}if(old&&old.remoteId!==remoteId){this.dropTransport(old.remoteId);this.remoteToId.delete(old.remoteId);}
-  this.records.set(id,{id,key,role,remoteId,online:false});this.remoteToId.set(remoteId,id);
- }
- private openChannel(remote:RemotePeer){
-  if(!this.remoteToId.has(remote.id)||this.transports.has(remote.id)||this.closed)return;
-  // Creating the channel STARTS negotiation; never wait for PC connected first.
-  if(!remote.polite)this.bindChannel(remote,remote.pc.createDataChannel('photo-transfer',{ordered:true}));
- }
- private bindChannel(remote:RemotePeer,channel:RTCDataChannel){
-  const id=this.remoteToId.get(remote.id),binding=id&&this.records.get(id);
-  if(!binding||binding.remoteId!==remote.id||channel.label!=='photo-transfer'||channel.ordered!==true||channel.maxRetransmits!==null||channel.maxPacketLifeTime!==null||this.transports.has(remote.id)){channel.close();return;}
-  const transport:PhotoChannel=new PhotoChannel(channel,binding.id,(direction,meta,visibility)=>{
-   const b=this.records.get(binding.id);
-   return !!b&&b.online&&b.remoteId===remote.id&&this.transports.get(remote.id)===transport&&this.options.canPhoto?.(binding.id,direction,meta,visibility)===true;
-  },async(data,ctx)=>{if(!this.session.photo.onRequest)throw new Error('Kein Empfänger.');return this.session.photo.onRequest(data,ctx);},this.options.role==='HOST'?'PUBLIC':'PRIVATE');
-  this.transports.set(remote.id,transport);
-  const open=()=>{if(this.closed||this.transports.get(remote.id)!==transport)return;binding.online=true;this.badSince=0;optionsStatus(this.options,this.resets?'Wieder verbunden':'Verbunden');this.session.room.onPeerJoin?.(binding.id);};
-  const close=()=>{channel.removeEventListener('open',open);channel.removeEventListener('close',close);this.setOffline(remote.id);this.dropTransport(remote.id);};
-  channel.addEventListener('open',open);channel.addEventListener('close',close);
-  this.channelDetach.set(remote.id,()=>{channel.removeEventListener('open',open);channel.removeEventListener('close',close);});
-  if(channel.readyState==='open')open();
- }
- private setOffline(remoteId:string){const id=this.remoteToId.get(remoteId),b=id?this.records.get(id):undefined;if(b?.online){b.online=false;this.transports.get(remoteId)?.clear();this.session.room.onPeerLeave?.(b.id);}for(const p of this.pending.values())if(p.remoteId===remoteId)p.reject();}
- private dropTransport(remoteId:string){this.channelDetach.get(remoteId)?.();this.channelDetach.delete(remoteId);const t=this.transports.get(remoteId);this.transports.delete(remoteId);t?.close();}
- private revoke(id:string){const b=this.records.get(id);if(!b)return;this.blocked.add(id);this.records.delete(id);this.remoteToId.delete(b.remoteId);this.dropTransport(b.remoteId);void sendControl(this.peer,b.remoteId,{type:'DENIED'}).catch(()=>{});this.session.room.onPeerLeave?.(id);}
- private offline=()=>{optionsStatus(this.options,'Verbindung kurz unterbrochen …');for(const r of this.remotes.keys()){this.setOffline(r);this.dropTransport(r);}};
- private visible=()=>{if(document.visibilityState==='visible')this.wake();};
- private wake=()=>{void this.checkHealth(true);};
- private async checkHealth(wake=false){
-  if(this.closed||(typeof navigator!=='undefined'&&navigator.onLine===false))return;
-  if(this.peer.state==='closed'||(wake&&Date.now()-this.lastTraffic>20_000)){await this.recover();return;}
-  let bad=this.peer.state!=='joined';let stalled=false,healthy=0;
-  for(const b of this.records.values()){
-   const remote=this.remotes.get(b.remoteId),dc=this.transports.get(b.remoteId)?.channel;
-   if(!remote){if(this.options.role!=='HOST')bad=true;continue;}
-   if(dc?.readyState!=='open'||['failed','disconnected','closed'].includes(remote.pc.connectionState)){
-    stalled=true;this.setOffline(b.remoteId);
-    if(remote&&wake)(remote.pc as RTCPeerConnection).restartIce?.();
-   }else {healthy++;if(!b.online&&this.peer.state==='joined'){b.online=true;this.session.room.onPeerJoin?.(b.id);}}
-  }
-  // An absent guest must not force healthy players through repeated global reconnects.
-  if(stalled&&(this.options.role!=='HOST'||healthy===0))bad=true;
-  // Repeat discovery if first announcement was lost; do not flood open sessions.
-  if(this.options.role==='HOST')for(const r of this.remotes.values())if(!this.remoteToId.has(r.id)&&!this.announced.has(r.id)){this.announced.add(r.id);void this.announce(r.id).catch(()=>{});}
-  if(bad){this.badSince||=Date.now();if(Date.now()-this.badSince>20_000)await this.recover();}else this.badSince=0;
- }
- async recover(){
-  if(this.closed||this.recovering)return this.recovering??Promise.resolve();
-  if(Date.now()-this.lastRestart<5000)return;this.lastRestart=Date.now();
-  this.recovering=(async()=>{
-   optionsStatus(this.options,'Verbindung wird wiederhergestellt …');this.resets++;this.generation++;
-   for(const id of this.remotes.keys()){this.setOffline(id);this.dropTransport(id);}for(const fn of this.detach.values())fn();this.detach.clear();this.remotes.clear();this.remoteToId.clear();this.admitting.clear();this.announced.clear();this.inboundRate.clear();
-   const old=this.peer;await old.close().catch(()=>{});if(this.closed)return;
-   this.peer=this.factory();this.attach();try{await this.peer.join(this.channel);this.lastTraffic=Date.now();this.badSince=0;}catch{optionsStatus(this.options,'Verbindung fehlgeschlagen. Erneut versuchen.');}
-  })().finally(()=>{this.recovering=null;});return this.recovering;
- }
- private async diagnostics(){
-  if(!import.meta.env.DEV)return '';
-  const lines=[`Metered: ${this.peer.state} · Identität: ${this.identity.id} · Peer: ${this.peer.peerId??'–'} · Rolle: ${this.options.role}`,`Reconnects: ${this.resets} · letzter Reset: ${this.lastReset||'–'}`];
-  for(const remote of this.remotes.values()){
-   let route='unbekannt';try{const stats=await (remote.pc as RTCPeerConnection).getStats();stats.forEach(report=>{if(report.type==='transport'&&report.selectedCandidatePairId){const pair=stats.get(report.selectedCandidatePairId),local=pair&&stats.get(pair.localCandidateId),other=pair&&stats.get(pair.remoteCandidateId);route=`${local?.candidateType??'?'} / ${other?.candidateType??'?'} · ${[local?.candidateType,other?.candidateType].includes('relay')?'relay':'direct'}`;}});}catch{/* Optional browser capability. */}
-   const config=(remote.pc as RTCPeerConnection).getConfiguration?.();const turn=config?.iceServers?.some(s=>(typeof s.urls==='string'?[s.urls]:s.urls).some(url=>/^turns?:/.test(url)))??false;
-   const t=this.transports.get(remote.id);lines.push(`${this.remoteToId.has(remote.id)?'APPROVED':'PENDING'} · ICE ${remote.pc.iceConnectionState} · PC ${remote.pc.connectionState} · DataChannel ${t?.channel.readyState??'closed'} · ${route} · TURN konfiguriert: ${turn?'ja':'nein'} · Transfers ${t?.active??0}`);
-  }return lines.join('\n');
- }
- private async close(){if(this.closed)return;this.closed=true;this.generation++;this.lifetime.abort();clearInterval(this.health);
-  if(typeof window!=='undefined'){window.removeEventListener('online',this.wake);window.removeEventListener('offline',this.offline);window.removeEventListener('pageshow',this.wake);document.removeEventListener('visibilitychange',this.visible);}
-  for(const id of this.transports.keys())this.dropTransport(id);this.transports.clear();for(const fn of this.detach.values())fn();this.detach.clear();for(const p of this.pending.values())p.reject();this.pending.clear();this.records.clear();this.remotes.clear();this.remoteToId.clear();this.blocked.clear();this.inboundRate.clear();await this.peer.close();
- }
+  return result;
 }
-function optionsStatus(options:LobbyOptions,status:string){options.onStatus?.(status);}
+export function normalizeRoomCode(input: string): string {
+  let code = input.trim();
+  if (/^https?:\/\//.test(code)) { try { code = new URLSearchParams(new URL(code).hash.split('?')[1] ?? '').get('code') ?? ''; } catch { throw new Error('Ungültiger Einladungslink.'); } }
+  code = code.toUpperCase().replace(/[\s-]/g, '');
+  if (!/^[A-HJ-NP-Z2-9]{10}$/.test(code)) throw new Error('Bitte den zehnstelligen Lobbycode eingeben.');
+  return code;
+}
+export const roomLink = (code: string, location: Pick<Location, 'origin' | 'pathname'>, display = false, hostKey = '') => `${location.origin}${location.pathname}#/spiel?code=${normalizeRoomCode(code)}${display ? '&display=1' : ''}${/^04[\da-f]{128}$/.test(hostKey) ? `&host=${hostKey}` : ''}`;
+export function parseHandshake(value: unknown): LobbyHandshake | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as LobbyHandshake;
+  return v.version === 5 && ['HOST', 'PLAYER', 'DISPLAY'].includes(v.role) && (v.role === 'HOST' || (typeof v.name === 'string' && v.name.trim().length > 0 && v.name.length <= 30)) ? v : null;
+}
+type Signal = { type: 'OFFER' | 'ANSWER'; sdp: string } | { type: 'ICE'; candidate: RTCIceCandidateInit } | { type: 'RESTART' };
+type Incoming = { type: 'welcome'; id: string; hostToken?: string } | { type: 'peer-joined' | 'peer-left'; id: string } | { type: 'route'; from: string; data: unknown } | { type: 'turn'; iceServers: RTCIceServer[] } | { type: 'error'; message: string };
+type Binding = { id: string; key: string; role: Role; remoteId: string; online: boolean };
+const signalData = (raw: unknown): Signal | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const v = raw as Record<string, unknown>;
+  if ((v.type === 'OFFER' || v.type === 'ANSWER') && typeof v.sdp === 'string' && v.sdp.length < 20000) return { type: v.type, sdp: v.sdp };
+  if (v.type === 'RESTART') return { type: 'RESTART' };
+  if (v.type === 'ICE' && v.candidate && typeof v.candidate === 'object') {
+    const c = v.candidate as RTCIceCandidateInit;
+    if (typeof c.candidate === 'string' && c.candidate.length < 2000) return { type: 'ICE', candidate: c };
+  }
+  return null;
+};
+function validIce(value: unknown): value is RTCIceServer[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= 4 && value.every(s => s && (typeof s.urls === 'string' || Array.isArray(s.urls)) && (!s.username || typeof s.username === 'string') && (!s.credential || typeof s.credential === 'string'));
+}
+
+export async function createLobbySession(options: LobbyOptions): Promise<LobbySession> {
+  if (!globalThis.isSecureContext || typeof RTCPeerConnection === 'undefined' || typeof WebSocket === 'undefined') throw new Error('Bitte die HTTPS-Seite in Safari oder Chrome öffnen.');
+  const identity = options.identity ?? await makeIdentity(options.role === 'HOST' ? 'host' : storedIdentity(options.role));
+  const lobby = new CloudflareLobby(options, identity);
+  try { await withDeadline(() => lobby.start(), 20_000, options.signal); return lobby.session; }
+  catch (e) { await lobby.session.room.leave(); throw e instanceof Error ? e : new Error(NETWORK_ERROR); }
+}
+
+/** Cloudflare sees short text/signalling messages. Photos only use the RTCDataChannel. */
+export class CloudflareLobby {
+  readonly session: LobbySession;
+  private ws: WebSocket | null = null;
+  private selfRemote = '';
+  private hostRemote = '';
+  private hostKey = '';
+  private hostToken = '';
+  private ice: RTCIceServer[] = STUN;
+  private turnReady: Promise<void> = Promise.resolve();
+  private turnResolve: (() => void) | null = null;
+  private bindings = new Map<string, Binding>();
+  private remoteIds = new Map<string, string>();
+  private pcs = new Map<string, RTCPeerConnection>();
+  private candidates = new Map<string, RTCIceCandidateInit[]>();
+  private transports = new Map<string, PhotoChannel>();
+  private pending = new Map<string, { remote: string; resolve: () => void; reject: () => void; timer: ReturnType<typeof setTimeout> }>();
+  private admitting = new Set<string>();
+  private blocked = new Set<string>();
+  private closed = false;
+  private health: ReturnType<typeof setInterval> | undefined;
+  private lastRestart = new Map<string, number>();
+  private lastTurnRequest = 0;
+  private readonly abort = new AbortController();
+  private connecting: Promise<void> | null = null;
+  constructor(private options: LobbyOptions, private identity: DeviceIdentity) {
+    this.session = { selfId: identity.id, publicKey: identity.publicKey,
+      control: { onRequest: null, request: async (data, opts) => {
+        const message = decodeMessage(data), binding = this.bindings.get(opts.target);
+        if (!message || !binding?.online) throw new Error('Nicht freigegeben oder getrennt.');
+        const requestId = crypto.randomUUID();
+        await new Promise<void>((resolve, reject) => {
+          const done = (ok: boolean) => { clearTimeout(timer); opts.signal?.removeEventListener('abort', cancel); this.pending.delete(requestId); if (ok) resolve(); else reject(new Error('Keine Antwort. Bitte erneut versuchen.')); };
+          const cancel = () => done(false);
+          const timer = setTimeout(cancel, opts.timeoutMs ?? 10_000);
+          this.pending.set(requestId, { remote: binding.remoteId, resolve: () => done(true), reject: cancel, timer });
+          opts.signal?.addEventListener('abort', cancel, { once: true });
+          if (opts.signal?.aborted) cancel(); else try { this.route(binding.remoteId, { type: 'CONTROL', requestId, message }); } catch { cancel(); }
+        });
+        return { ok: true };
+      } },
+      photo: { onRequest: null, request: (data, opts) => {
+        const binding = this.bindings.get(opts.target), transport = binding && this.transports.get(binding.remoteId);
+        if (!binding?.online || !transport) throw new Error('Fotoverbindung wird wiederhergestellt …');
+        return transport.request(data, opts);
+      } },
+      room: { onPeerJoin: null, onPeerLeave: null, leave: () => this.close(), getPeers: () => Object.fromEntries([...this.bindings].map(([id]) => [id, { close: () => this.revoke(id) }])) },
+      relayCount: () => this.ws?.readyState === WebSocket.OPEN ? 1 : 0,
+      diagnostics: async () => `Cloudflare · Vermittlung: ${this.ws?.readyState === WebSocket.OPEN ? 'verbunden' : 'getrennt'} · TURN: ${this.ice.some(s => String(s.urls).includes('turn:')) ? 'aktiv' : 'nicht konfiguriert'} · Fotoverbindungen: ${[...this.transports.values()].filter(t => t.channel.readyState === 'open').length}`,
+      recover: () => this.recover(), clearTransfers: () => { for (const t of this.transports.values()) t.clear(); } };
+  }
+  private proof(id: string, role: Role, remoteId: string) { return `game-${normalizeRoomCode(this.options.code)}|${id}|${role}|${remoteId}`; }
+  private route(to: string, data: NetworkControl | Signal) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error(NETWORK_ERROR);
+    this.ws.send(JSON.stringify({ type: 'route', to, data }));
+  }
+  async start() { await this.connect(); this.health = setInterval(() => void this.checkHealth(), 15_000); window.addEventListener('online', this.wake); window.addEventListener('pageshow', this.wake); document.addEventListener('visibilitychange', this.visible); }
+  private async connect(): Promise<void> {
+    if (this.connecting) return this.connecting;
+    this.connecting = this.openSocket().finally(() => { this.connecting = null; });
+    return this.connecting;
+  }
+  private openSocket() {
+    return new Promise<void>((resolve, reject) => {
+      const url = new URL(`/api/lobby/${normalizeRoomCode(this.options.code)}`, location.origin);
+      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      url.searchParams.set('role', this.options.role === 'HOST' ? 'HOST' : 'GUEST');
+      if (this.hostToken) url.searchParams.set('ticket', this.hostToken);
+      const ws = new WebSocket(url); this.ws = ws;
+      let welcomed = false;
+      const timer = setTimeout(() => { ws.close(); reject(new Error(NETWORK_ERROR)); }, 15_000);
+      ws.onmessage = event => {
+        if (this.ws !== ws || this.closed || typeof event.data !== 'string' || event.data.length > 32_768) return;
+        let msg: Incoming; try { msg = JSON.parse(event.data) as Incoming; } catch { return; }
+        if (msg.type === 'welcome' && typeof msg.id === 'string') {
+          welcomed = true; clearTimeout(timer); this.selfRemote = msg.id;
+          if (msg.hostToken) this.hostToken = msg.hostToken;
+          this.turnReady = new Promise<void>(done => { this.turnResolve = done; });
+          if (this.options.role === 'HOST') this.requestTurn();
+          resolve();
+        } else if (msg.type === 'error') { if (!welcomed) { clearTimeout(timer); reject(new Error(msg.message || CONNECTION_ERROR)); } else this.options.onStatus?.(msg.message || NETWORK_ERROR); }
+        else if (welcomed && msg.type === 'turn') {
+          if (validIce(msg.iceServers)) {
+            this.ice = msg.iceServers;
+            for (const pc of this.pcs.values()) if (pc.connectionState !== 'closed') pc.setConfiguration({ iceServers: this.ice });
+          }
+          this.turnResolve?.(); this.turnResolve = null;
+        }
+        else if (welcomed && msg.type === 'peer-joined' && typeof msg.id === 'string') { if (this.options.role === 'HOST') void this.announce(msg.id); }
+        else if (welcomed && msg.type === 'peer-left' && typeof msg.id === 'string') this.left(msg.id);
+        else if (welcomed && msg.type === 'route' && typeof msg.from === 'string') void this.handle(msg.from, msg.data).catch(() => {});
+      };
+      ws.onerror = () => { if (!welcomed) { clearTimeout(timer); reject(new Error(CONNECTION_ERROR)); } };
+      ws.onclose = () => { if (this.ws !== ws || this.closed) return; clearTimeout(timer); if (!welcomed) reject(new Error(CONNECTION_ERROR)); this.turnResolve?.(); this.turnResolve = null; for (const remote of this.pcs.keys()) this.left(remote); this.options.onStatus?.('Verbindung unterbrochen. Wiederverbinden …'); };
+    });
+  }
+  private async announce(remote: string) {
+    if (this.closed || this.options.role !== 'HOST' || !this.selfRemote) return;
+    this.route(remote, { type: 'HOST', id: 'host', publicKey: this.identity.publicKey, signature: await this.identity.sign(this.proof('host', 'HOST', this.selfRemote)) });
+  }
+  private async join(remote: string) {
+    if (this.options.role === 'HOST' || this.admitting.has(remote)) return;
+    this.admitting.add(remote);
+    try { this.route(remote, { type: 'JOIN', id: this.identity.id, role: this.options.role, name: this.options.name?.trim().slice(0, 30) || 'Display', publicKey: this.identity.publicKey, signature: await this.identity.sign(this.proof(this.identity.id, this.options.role, this.selfRemote)) }); }
+    catch { this.admitting.delete(remote); }
+  }
+  private async handle(remote: string, data: unknown) {
+    const msg = parseNetwork(data);
+    if (msg?.type === 'HOST' && this.options.role !== 'HOST') {
+      if ((this.options.expectedHostKey && msg.publicKey !== this.options.expectedHostKey) || (this.hostKey && msg.publicKey !== this.hostKey) || msg.id !== 'host' || !await verifyIdentity(msg.publicKey, msg.signature, this.proof('host', 'HOST', remote))) return;
+      if (this.hostRemote && this.hostRemote !== remote && this.bindings.get('host')?.online) return;
+      this.hostKey = msg.publicKey; this.hostRemote = remote;
+      await this.options.authorize?.('host', { version: 5, role: 'HOST', publicKey: msg.publicKey });
+      this.options.onStage?.('approval', 'host'); await this.join(remote); return;
+    }
+    if (msg?.type === 'JOIN' && this.options.role === 'HOST') {
+      if (this.admitting.has(remote) || this.blocked.has(remote) || this.blocked.has(msg.id) || msg.id === 'host' || !await verifyIdentity(msg.publicKey, msg.signature, this.proof(msg.id, msg.role, remote))) return;
+      this.admitting.add(remote);
+      try {
+        const old = this.bindings.get(msg.id);
+        if (old?.online && old.remoteId !== remote || old && old.role !== msg.role) throw new Error('Bereits verbunden.');
+        if (!old || old.key !== msg.publicKey) await this.options.authorize?.(msg.id, { version: 5, role: msg.role, name: msg.name, check: msg.publicKey.slice(-12).toUpperCase() });
+        if (this.closed || this.ws?.readyState !== WebSocket.OPEN) return;
+        if (old && old.remoteId !== remote) this.left(old.remoteId);
+        this.bindings.set(msg.id, { id: msg.id, key: msg.publicKey, role: msg.role, remoteId: remote, online: false }); this.remoteIds.set(remote, msg.id);
+        this.route(remote, { type: 'APPROVED', id: msg.id, role: msg.role });
+        await this.openPeer(remote);
+      } catch { try { this.route(remote, { type: 'DENIED' }); } catch { /* guest disconnected */ } this.blocked.add(remote); }
+      finally { this.admitting.delete(remote); }
+      return;
+    }
+    if (msg?.type === 'APPROVED' && this.options.role !== 'HOST' && remote === this.hostRemote && msg.id === this.identity.id && msg.role === this.options.role) {
+      this.admitting.delete(remote); this.options.onStage?.('connecting', 'host');
+      this.bindings.set('host', { id: 'host', key: this.hostKey, role: 'HOST', remoteId: remote, online: false }); this.remoteIds.set(remote, 'host');
+      this.requestTurn(); return;
+    }
+    if (msg?.type === 'DENIED' && remote === this.hostRemote) { this.options.onJoinError?.('host', 'Der Host hat die Anfrage abgelehnt.'); return; }
+    const id = this.remoteIds.get(remote), binding = id && this.bindings.get(id);
+    if (!binding || binding.remoteId !== remote) return;
+    if (msg?.type === 'ACK') { const pending = this.pending.get(msg.requestId); if (pending?.remote === remote) { if (msg.ok) pending.resolve(); else pending.reject(); } return; }
+    if (msg?.type === 'CONTROL') {
+      if (!binding.online) return;
+      let ok = false;
+      try { await this.session.control.onRequest?.(encodeMessage(msg.message), { peerId: id, signal: this.abort.signal }); ok = true; } catch { /* Invalid game control is never acknowledged as valid. */ }
+      this.route(remote, { type: 'ACK', requestId: msg.requestId, ok }); return;
+    }
+    const signal = signalData(data);
+    if (!signal) return;
+    if (signal.type === 'RESTART' && this.options.role === 'HOST') { await this.restart(remote); return; }
+    if (signal.type === 'OFFER' && this.options.role !== 'HOST') {
+      await this.turnReady;
+      const pc = this.newPeer(remote);
+      await pc.setRemoteDescription({ type: 'offer', sdp: signal.sdp });
+      await this.flushCandidates(remote, pc);
+      await pc.setLocalDescription(await pc.createAnswer());
+      this.route(remote, { type: 'ANSWER', sdp: pc.localDescription!.sdp! });
+    } else if (signal.type === 'ANSWER' && this.options.role === 'HOST') {
+      const pc = this.pcs.get(remote); if (pc?.signalingState === 'have-local-offer') { await pc.setRemoteDescription({ type: 'answer', sdp: signal.sdp }); await this.flushCandidates(remote, pc); }
+    } else if (signal.type === 'ICE') {
+      const pc = this.pcs.get(remote);
+      if (!pc?.remoteDescription) { const queue = this.candidates.get(remote) ?? []; if (queue.length < 80) queue.push(signal.candidate); this.candidates.set(remote, queue); return; }
+      try { await pc.addIceCandidate(signal.candidate); } catch { /* stale candidate after an ICE restart */ }
+    }
+  }
+  private newPeer(remote: string) {
+    this.dropPeer(remote);
+    const pc = new RTCPeerConnection({ iceServers: this.ice }); this.pcs.set(remote, pc);
+    pc.onicecandidate = e => { if (e.candidate) try { this.route(remote, { type: 'ICE', candidate: e.candidate.toJSON() }); } catch { /* reconnect will retry */ } };
+    pc.ondatachannel = e => this.bindChannel(remote, e.channel);
+    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') void this.checkHealth(); };
+    return pc;
+  }
+  private async flushCandidates(remote: string, pc: RTCPeerConnection) {
+    const queue = this.candidates.get(remote) ?? []; this.candidates.delete(remote);
+    for (const candidate of queue) try { await pc.addIceCandidate(candidate); } catch { /* stale */ }
+  }
+  private async openPeer(remote: string) {
+    if (this.options.role !== 'HOST') return;
+    await this.turnReady;
+    if (this.closed || !this.remoteIds.has(remote)) return;
+    const pc = this.newPeer(remote);
+    this.bindChannel(remote, pc.createDataChannel('photo-transfer', { ordered: true }));
+    await pc.setLocalDescription(await pc.createOffer());
+    this.route(remote, { type: 'OFFER', sdp: pc.localDescription!.sdp! });
+  }
+  private bindChannel(remote: string, channel: RTCDataChannel) {
+    const id = this.remoteIds.get(remote), binding = id && this.bindings.get(id);
+    if (!binding || channel.label !== 'photo-transfer' || channel.ordered !== true || channel.maxRetransmits !== null || channel.maxPacketLifeTime !== null || this.transports.has(remote)) { channel.close(); return; }
+    const transport: PhotoChannel = new PhotoChannel(channel, id, (direction, meta, visibility) => {
+      const b = this.bindings.get(id);
+      return !!b?.online && b.remoteId === remote && this.transports.get(remote) === transport && this.options.canPhoto?.(id, direction, meta, visibility) === true;
+    }, async (data, ctx) => { if (!this.session.photo.onRequest) throw new Error('Kein Empfänger.'); return this.session.photo.onRequest(data, ctx); }, this.options.role === 'HOST' ? 'PUBLIC' : 'PRIVATE');
+    this.transports.set(remote, transport);
+    const open = () => { if (this.transports.get(remote) !== transport || this.closed || binding.online) return; binding.online = true; this.options.onStatus?.('Verbunden'); this.session.room.onPeerJoin?.(id); };
+    channel.addEventListener('open', open);
+    channel.addEventListener('close', () => { if (this.transports.get(remote) === transport) { this.setOffline(remote); transport.close(); this.transports.delete(remote); } });
+    if (channel.readyState === 'open') open();
+  }
+  private setOffline(remote: string) {
+    const id = this.remoteIds.get(remote), b = id ? this.bindings.get(id) : undefined;
+    if (b?.online && id) { b.online = false; this.session.room.onPeerLeave?.(id); }
+    for (const p of [...this.pending.values()]) if (p.remote === remote) p.reject();
+  }
+  private dropPeer(remote: string) { this.setOffline(remote); const t = this.transports.get(remote); this.transports.delete(remote); t?.close(); const pc = this.pcs.get(remote); this.pcs.delete(remote); pc?.close(); }
+  private left(remote: string) {
+    this.dropPeer(remote);
+    const id = this.remoteIds.get(remote); this.remoteIds.delete(remote); this.candidates.delete(remote);
+    if (id && this.bindings.get(id)?.remoteId === remote) this.bindings.delete(id);
+    if (remote === this.hostRemote) { this.hostRemote = ''; this.admitting.delete(remote); }
+  }
+  private revoke(id: string) { const b = this.bindings.get(id); if (!b) return; this.blocked.add(id); try { this.route(b.remoteId, { type: 'DENIED' }); } catch { /* disconnected */ } this.left(b.remoteId); }
+  private async restart(remote: string) {
+    const now = Date.now(); if (now - (this.lastRestart.get(remote) ?? 0) < 10_000) return;
+    this.lastRestart.set(remote, now);
+    if (this.options.role === 'HOST') try { await this.openPeer(remote); } catch { /* next health check retries */ }
+    else try { this.route(remote, { type: 'RESTART' }); } catch { /* reconnect will retry */ }
+  }
+  private requestTurn() {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.lastTurnRequest = Date.now();
+    this.ws.send(JSON.stringify({ type: 'turn' }));
+  }
+  private async checkHealth() {
+    if (this.closed || navigator.onLine === false) return;
+    if (this.ws?.readyState !== WebSocket.OPEN) { await this.recover(); return; }
+    if (this.lastTurnRequest && Date.now() - this.lastTurnRequest > 90 * 60_000) this.requestTurn();
+    for (const [remote, b] of this.bindings) {
+      const pc = this.pcs.get(b.remoteId), dc = this.transports.get(b.remoteId)?.channel;
+      if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed' || dc?.readyState === 'closed') await this.restart(b.remoteId);
+      if (this.options.role !== 'HOST' && remote === 'host' && !pc) await this.restart(b.remoteId);
+    }
+  }
+  private wake = () => { void this.checkHealth(); };
+  private visible = () => { if (document.visibilityState === 'visible') this.wake(); };
+  async recover() { if (this.closed || this.ws?.readyState === WebSocket.OPEN) { await this.checkPeers(); return; } try { await this.connect(); } catch { this.options.onStatus?.(NETWORK_ERROR); } }
+  private async checkPeers() { for (const b of this.bindings.values()) if (this.pcs.get(b.remoteId)?.connectionState === 'failed') await this.restart(b.remoteId); }
+  async close() { if (this.closed) return; this.closed = true; this.abort.abort(); clearInterval(this.health); window.removeEventListener('online', this.wake); window.removeEventListener('pageshow', this.wake); document.removeEventListener('visibilitychange', this.visible); this.ws?.close(); this.ws = null; for (const r of this.pcs.keys()) this.dropPeer(r); for (const p of this.pending.values()) p.reject(); this.pending.clear(); }
+}

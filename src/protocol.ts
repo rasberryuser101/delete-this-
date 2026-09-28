@@ -1,5 +1,4 @@
 import type { Game, PublicDisplayState } from './game';
-import { CATEGORIES } from './prompts';
 import { isReaction, type Reaction } from './party';
 export type ControlMessage =
   | { type: 'ready' }
@@ -27,7 +26,7 @@ export function validateMessage(raw: unknown): WireMessage | null {
   return null;
 }
 function validGame(value: unknown): value is Game {
-  if (!object(value) || Object.keys(value).some(k=>!['phase','mode','round','roundId','prompt','category','players','photos','votes','winnerId','revealIndex'].includes(k)) || !['lobby','submit','reveal','vote','result'].includes(value.phase as string) || !['PARTY','REMOTE'].includes(value.mode as string) || !Number.isInteger(value.round) || (value.round as number) < 0 || !Array.isArray(value.players) || value.players.length > 10 || !Array.isArray(value.photos) || value.photos.length > 10 || !object(value.votes) || Object.keys(value.votes).length > 10 || !str(value.prompt || 'lobby', 500) || (value.category !== null && !CATEGORIES.includes(value.category as never)) || typeof value.roundId !== 'string' || value.roundId.length > 100 || (value.winnerId !== null && !id(value.winnerId))) return false;
+  if (!object(value) || Object.keys(value).some(k=>!['phase','mode','round','roundId','prompt','category','players','photos','votes','winnerId','revealIndex'].includes(k)) || !['lobby','submit','reveal','vote','result'].includes(value.phase as string) || !['PARTY','REMOTE'].includes(value.mode as string) || !Number.isInteger(value.round) || (value.round as number) < 0 || !Array.isArray(value.players) || value.players.length > 10 || !Array.isArray(value.photos) || value.photos.length > 10 || !object(value.votes) || Object.keys(value.votes).length > 10 || !str(value.prompt || 'lobby', 500) || (value.category !== null && !str(value.category, 32)) || typeof value.roundId !== 'string' || value.roundId.length > 100 || (value.winnerId !== null && !id(value.winnerId))) return false;
   if(!Number.isInteger(value.revealIndex)||(value.revealIndex as number)<-1||(value.revealIndex as number)>=value.photos.length) return false;
   return value.players.every(p => object(p) && Object.keys(p).every(k=>['id','name','score','connected'].includes(k)) && id(p.id) && str(p.name, 30) && Number.isInteger(p.score) && (p.score as number) >= 0 && (p.score as number) < 10000 && typeof p.connected === 'boolean') && value.photos.every(p => object(p) && Object.keys(p).every(k=>['id','ownerId'].includes(k)) && id(p.id) && id(p.ownerId)) && Object.entries(value.votes).every(([key, v]) => id(key) && id(v));
 }

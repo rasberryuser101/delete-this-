@@ -2,3 +2,8 @@ node_modules/
 dist/
 *.local
 .DS_Store
+
+.env*
+!.env.example
+.dev.vars
+.wrangler/

@@ -9,9 +9,9 @@ export function joinPlayer(game: Game, player: Player): Game {
   if (game.phase !== 'lobby' || game.players.length >= 10 || game.players.some(p => p.id === player.id)) throw new Error('Beitritt nur in der Lobby mit maximal 10 Personen.');
   return {...game, players: [...game.players, player]};
 }
-export function nextRound(game: Game, categories: Category[], used: string[], random = Math.random): Game {
+export function nextRound(game: Game, categories: Category[], used: string[], random = Math.random, packs?: string[]): Game {
   if (!['lobby', 'result'].includes(game.phase) || game.players.filter(p => p.connected).length < 2) throw new Error('Es braucht mindestens zwei verbundene Spieler.');
-  const selected = pickPrompt(categories, used, random);
+  const selected = pickPrompt(categories, used, random, packs);
   return {...game, phase: 'submit', round: game.round + 1, roundId: crypto.randomUUID(), prompt: selected.text, category: selected.category, photos: [], votes: {}, winnerId: null, revealIndex:-1};
 }
 export function submitPhoto(game: Game, ownerId: string, photoId: string): Game {

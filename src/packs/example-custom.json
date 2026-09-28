@@ -1,0 +1,11 @@
+{
+  "id": "beispiel-pack",
+  "title": "Beispiel-Extras",
+  "description": "Kleines Beispiel für ein eigenes Pack – kann jederzeit gelöscht werden.",
+  "category": "Freunde",
+  "prompts": [
+    "Das Profilbild für jemanden, der auf LinkedIn ein Schneeballsystem als Mindset verkauft.",
+    "Wenn der Gruppenchat vor Gericht als Bildbeweis aufgerufen wird.",
+    "Dieses Bild hat schon beim Öffnen einen Anwalt verlangt."
+  ]
+}

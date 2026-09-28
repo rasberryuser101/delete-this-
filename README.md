@@ -1,93 +1,87 @@
 # Delete This! 📸
 
-Bestehendes deutsches Foto-Partyspiel für 2–10 Spieler, weiterhin statisch mit React, TypeScript und Vite auf **GitHub + Vercel**. Design, Prompts, Sounds und Spielablauf bleiben erhalten. Ab Version 5 ersetzt `@metered-ca/realtime` (SDK 1.2.0 oder neuer) die bisherigen öffentlichen MQTT-Broker und die manuelle TURN-Eingabe. Kein eigenes Backend, keine Vercel Functions und keine Foto-Datenbank.
+Ein deutsches Foto-Partyspiel für 2–10 Personen. Die App besteht aus React/TypeScript, einem kleinen Cloudflare Worker für die Lobby und kurzlebige TURN-Zugänge sowie Cloudflare Static Assets für die Website. **Fotos werden ausschließlich auf den Geräten verarbeitet und über WebRTC-DataChannels ausgetauscht.** Cloudflare sieht kleine Lobby- und Spielnachrichten; bei blockierten Direktverbindungen leitet Cloudflare TURN die *verschlüsselten* WebRTC-Pakete weiter. Es gibt keine Foto-Uploads, KI, Analytics oder Foto-Datenbank.
 
-## Spielen
+## So läuft eine Verbindung ab (ganz einfach)
 
-1. Namen eingeben, Party oder Remote wählen, Spiel erstellen.
-2. Einladungslink/QR teilen oder den zehnstelligen Raumcode eingeben. Der Link enthält zusätzlich den öffentlichen Host-Schlüssel zur Prüfung des richtigen Hosts.
-3. Der Host vergleicht die Prüfkennung mit dem Freund und erlaubt oder verweigert den Beitritt. Vorher gibt es weder Spielstand noch Fotokanal.
-4. Prompt, lokale Fotoauswahl, Show mit einzeln enthüllten Bildern, Abstimmung, Punkte, nächste Runde funktionieren wie bisher.
-5. **Remote:** zugelassene Spieler erhalten die enthüllten Fotos auf ihren Geräten.
-6. **Party:** Spieler reichen per Handy ein und stimmen dort ab. Fotos erscheinen beim Host und auf separat bestätigten **Displays**. Zum Verbinden „Als Display beitreten“ wählen oder den Display-Link des Hosts öffnen. Displays zählen nicht als Spieler und können keine Spieleraktionen ausführen; maximal drei Displays.
+1. Der Host erstellt eine Lobby. Der Worker bekommt einen zufälligen Lobbycode und merkt sich vorübergehend, welches Gerät Host ist.
+2. Der Host schickt einen **Link oder QR-Code**. Der Code zum Abtippen ist nur eine Alternative. Im Link steht auch der öffentliche Schlüssel des Hosts: So kann das Handy erkennen, dass es mit dem richtigen Host spricht.
+3. Neue Gäste fragen nach Einlass. Der Host vergleicht ihre Prüfkennung und bestätigt sie einzeln. Der Worker lässt vor dieser Freigabe weder Spielnachrichten noch TURN-Zugänge für Gäste zu.
+4. Der Worker tauscht wenige kurze Verbindungsnachrichten aus. Die Geräte bauen ihren eigenen verschlüsselten WebRTC-Datenkanal auf. Scheitert die direkte Strecke, gibt Cloudflare für freigegebene Geräte einen zeitlich begrenzten TURN-Zugang aus. **Das TURN-Geheimnis selbst liegt ausschließlich im Worker.**
+5. Der Gast wählt ein Foto. Canvas verkleinert und encodiert es neu (EXIF/GPS werden nicht übernommen). Die komprimierten Bytes gehen nur über den Datenkanal zum Host. Im Remote-Modus verschickt der Host enthüllte Fotos über DataChannels weiter.
+6. Nach der Runde verschwinden Fotoreferenzen und Object-URLs aus der App. Freigegebene Personen können natürlich Screenshots machen.
 
-Musik und Sounds werden lokal über Web Audio erzeugt. Die Schrift ist lokal eingebunden. Keine KI-APIs, Analytics oder externen Sound-/Font-Aufrufe. Nach dem Update alle Geräte neu laden und eine neue Lobby erstellen; alte Lobbys sind nicht kompatibel.
+Cloudflare bekommt IP-Adressen und Verbindungs-/Spielmetadaten. Der Worker speichert kurzzeitig **nur eine Prüfsumme des Host-Tickets und Zähler gegen Missbrauch** in SQLite-gestützten Durable Objects, **keine Fotos und keine Spielhistorie**. Das Host-Ticket liegt im Browser-RAM, nicht im Einladungslink. Bilder über TURN sind Ende-zu-Ende mit WebRTC verschlüsselt; der Betreiber sieht den Datenverkehr und dessen Umfang, aber nicht den Bildinhalt. Ein Angriff durch viele verteilte Geräte lässt sich ohne Identitätsprüfung nicht sicher ausschließen. Links privat teilen, Beitritte prüfen, Cloudflare-Nutzung beobachten.
 
-## Lokal entwickeln
+## Vorbereiten: Cloudflare Realtime TURN
+
+**Diesen Schritt machst du einmal im eigenen Cloudflare-Dashboard. Keine Schlüssel in GitHub, Chat, Screenshots oder eine `VITE_`-Variable kopieren.**
+
+1. Im Cloudflare-Dashboard **Realtime → TURN** öffnen und einen TURN Key erstellen.
+2. Dort **TURN Key ID** und den zugehörigen **TURN Key API Token** kopieren und sicher aufbewahren. Falls Cloudflare die Namen im Dashboard leicht anders nennt: Die ID ist der Pfadteil für `turn/keys/{ID}`, der Token authentifiziert die Credential-API.
+3. Nach dem ersten Worker-Deploy unter **Workers & Pages → delete-this → Settings → Variables & Secrets** zwei **Runtime Secrets** anlegen:
+   - `TURN_KEY_ID` = deine TURN Key ID
+   - `TURN_KEY_TOKEN` = dein TURN Key API Token
+4. Speichern und die neue Worker-Version deployen, falls Cloudflare dazu auffordert. `https://<deine-worker-url>/api/status` muss danach `{"turn":true}` zeigen. Das verrät **keinen** Schlüssel, nur ob beide Einträge existieren.
+
+Der Worker fragt Cloudflare bei Bedarf nach zwei Stunden gültigen TURN-Zugangsdaten und gibt diese nur an freigegebene Geräte. Ohne diese beiden Secrets nutzt das Spiel nur den kostenlosen Cloudflare-STUN-Server; besonders iPhone-zu-PC über Mobilfunk kann dann scheitern. Ein eingetragenes Secret allein ist noch kein Beweis für eine funktionierende TURN-Verbindung: den Live-Test unten durchführen.
+
+## GitHub → Cloudflare Workers deployen
+
+Der Worker und die Vite-Dateien werden **in einem Cloudflare-Workers-Projekt** veröffentlicht. Ein Cloudflare-Pages-Projekt allein würde die Lobby nicht bereitstellen.
+
+1. Den Quellcode im Branch **`cloudflare-migration`** deines GitHub-Repositories `rasberryuser101/delete-this-` öffnen. Der bisherige `main`-Branch und die alte Vercel-Seite bleiben bis zum bestandenen Gerätetest bestehen. Wichtig: Inhalt im Repository-Stamm, kein zusätzlicher `delete-this/`-Ordner.
+2. Im Cloudflare-Dashboard **Workers & Pages → Create application → Import a repository** wählen, mit GitHub verbinden und dieses Repository auswählen.
+3. Projektnamen auf **`delete-this`** setzen; er muss zum `name` in `wrangler.jsonc` passen. Falls dieser Name bereits vergeben ist: Namen **in `wrangler.jsonc` und im Dashboard identisch** anpassen.
+4. Root directory: Repository-Stamm. Build command: **`npm run build`**. Deploy command: **`npx wrangler deploy`**. Produktionsbranch: **`cloudflare-migration`**. Wenn zunächst `main` vorausgewählt ist, vor dem Deploy in den Build-Einstellungen auf `cloudflare-migration` umstellen. Dann **Save and Deploy**.
+5. Die beiden TURN Runtime Secrets wie oben setzen. Danach die neue **`workers.dev`-URL** auf iPhone und PC öffnen. Alte Vercel-Einladungslinks sind mit neuen Cloudflare-Lobbys nicht kompatibel.
+
+Bei Änderungen auf `cloudflare-migration` wird neu gebaut. Im Worker gibt es keine weiteren Konten oder Cloud-Dienste. `dist/` bleibt eine statische Vite-Ausgabe; die Cloudflare-Lobby entsteht erst durch den danebenliegenden Worker. `robots.txt` und `noindex,nofollow` halten die Testversion aus Suchmaschinen, sind aber keine Zugangssperre.
+
+## Eigene Prompt-Packs ohne Code ändern
+
+Jede Datei `src/packs/*.json` wird beim Build **automatisch** zur Pack-Auswahl hinzugefügt. Du kannst im GitHub-Repository über **Add file → Create new file** beispielsweise `src/packs/urlaub.json` anlegen:
+
+```json
+{
+  "id": "urlaub",
+  "title": "Urlaub eskaliert",
+  "description": "Für Gruppenreisen mit zweifelhaften Entscheidungen.",
+  "category": "Freunde",
+  "prompts": [
+    "Das Profilbild für jemanden, der auf LinkedIn ein Schneeballsystem als Mindset verkauft.",
+    "Fünf Minuten vor dem schlechtesten Hotel-Check-in aller Zeiten."
+  ]
+}
+```
+
+`id` muss einzigartig sein (3–40 Kleinbuchstaben/Ziffern/Bindestriche). `title` und `category` erscheinen in der App; neue Kategorien erscheinen automatisch. `prompts` enthält mindestens einen deutschen Text. 18+-Packs bekommen die Kategorie `18+` und sind dadurch zunächst ausgeschaltet. Ungültige JSON-Dateien oder Schemafehler lassen den Build mit einer verständlichen Meldung scheitern. Die mitgelieferten acht Kategorien enthalten 618 Prompts plus ein kleines Beispiel-Pack. JSON-Packs sind öffentlich auf GitHub und in der Webseite sichtbar: keine privaten Daten hineinschreiben.
+
+## Lokal entwickeln und testen
 
 ```sh
 npm install
-```
-
-Eine nicht eingecheckte `.env.local` mit **deinem bereits angelegten Publishable Key** erstellen:
-
-```dotenv
-VITE_METERED_API_KEY=pk_live_...
-```
-
-Das ist ein Platzhalter, kein echter Key. `.env.example` enthält ebenfalls ausschließlich einen Platzhalter. Dann:
-
-```sh
-npm run dev
 npm test
 npm run typecheck
 npm run lint
 npm run build
+npm run test:worker
 ```
 
-Ohne Variable erscheint beim Spielstart eine verständliche Fehlermeldung. Vite nach Änderungen an `.env.local` neu starten. Der Debugbereich ist ausschließlich im Development Build verfügbar. Dort stehen Verbindungszustände, temporäre Peer-ID, stabile App-ID, Freigabe, DataChannel, Reconnects und – wenn verfügbar – ausgewählte Candidate-Typen/direct/relay. Keine Schlüssel, Bildinhalte, SDP oder IP-Adressen werden von der App geloggt.
+`npm run test:worker` startet einen **lokalen** Cloudflare Worker und prüft Lobby-Isolation, Freigabe und TURN-Zugang; er benötigt keinen echten Cloudflare-Key. Für einen manuellen lokalen Test optional `.dev.vars.example` nach `.dev.vars` kopieren, eigene Schlüssel dort eintragen (Datei wird ignoriert), dann `npm run dev:worker` ausführen und `http://localhost:8787` öffnen. `npm run dev` startet nur den Vite-Editor und bietet ohne parallel gestarteten Worker keinen Multiplayer.
 
-## Bestehendes Vercel-Projekt
+## Gerätetest nach dem Deploy
 
-**Nicht zu Cloudflare migrieren und kein neues Backend anlegen.**
+1. `.../api/status` zeigt `turn:true`.
+2. Auf dem PC **neue** Lobby starten, Link/QR auf iPhone mit Mobilfunk öffnen. Link inklusive `host=` benutzen.
+3. Die Prüfkennung des iPhones beim Host vergleichen und freigeben.
+4. Beide Geräte wählen unterschiedliche Fotos, beide können einreichen; der Host enthüllt nacheinander, beide stimmen ab; danach nächste Runde.
+5. Dasselbe im Remote-Modus wiederholen. Host-Tab im Vordergrund lassen. Falls Mobilfunk/Browser die Verbindung unterbricht, beide Geräte offen lassen und „Erneut versuchen“ wählen.
 
-1. Änderungen in das vorhandene GitHub-Repository `rasberryuser101/delete-this-` übernehmen.
-2. In Vercel das bestehende Projekt öffnen.
-3. Unter **Settings → Environment Variables** `VITE_METERED_API_KEY` mit dem eigenen Publishable Key setzen. Für **Production** und bei Bedarf **Preview/Development** aktivieren.
-4. Framework bleibt **Vite**, Build Command **`npm run build`**, Output Directory **`dist`**.
-5. Nach dem Setzen/Ändern der Variable **neu deployen**. Vite liest sie beim Build; ein alter Build übernimmt neue Variablen nicht nachträglich.
-6. URL teilen. Freunde brauchen keine Konten oder Konfiguration.
+Lokale Tests und ein Worker-Simulationstest ersetzen **keinen** Test mit zwei echten Geräten und aktiven Cloudflare-TURN-Secrets. Ohne Zugangsberechtigung zum Cloudflare-Dashboard kann dieses Repository keinen Live-Deploy oder iPhone-Test nachweisen.
 
-Bei einer erstmaligen Vercel-Einrichtung: Repository auf GitHub → Vercel öffnen → Repository importieren → Vite → `npm run build` → `dist` → Variable setzen → Deploy.
+## Kosten und Sicherheitsgrenzen
 
-`vercel.json` bleibt unverändert; `dist/` ist rein statisch. Hash-Routen, `robots.txt` mit `Disallow: /` und `noindex,nofollow` bleiben erhalten. Diese Suchmaschinenhinweise sind keine Zugangssperre.
+Cloudflare Realtime TURN/SFU teilen nach aktueller Preistabelle **1.000 GB kostenloses ausgehendes Datenvolumen pro Monat**, danach aktuell **0,05 US-Dollar/GB**. Workers und Durable Objects haben **eigene** Freikontingente, z. B. für Durable-Object-Anfragen, und können nach Erreichen von Limits blockieren. Die alte Grenze von Metered (100.000 Nachrichten) ist in diesem Cloudflare-Build nicht mehr relevant. Unnötige Vollsynchronisation alle acht Sekunden wurde entfernt; die Lobby sendet Änderungen, Freigaben und WebRTC-Signale. Dauerhafte Verbindungen werden über hibernierbare WebSockets gehalten. Kein System kann trotz Rate Limits und Gastgeberfreigabe einen öffentlichen Dienst vollständig gegen missbräuchliche verteilte Zugriffe absichern.
 
-### Metered-Konfiguration und Grenzen des Publishable Keys
-
-Der Key wird **nur** über `import.meta.env.VITE_METERED_API_KEY` gelesen. Keine echten Keys in Source, README, Tests oder Git speichern. `.env*` werden bis auf `.env.example` ignoriert.
-
-**Eine VITE-Variable wird in das öffentliche Browser-Bundle eingebaut. Ein Publishable Key ist ausdrücklich kein geheimes Serverpasswort.** Er wird nicht in der normalen Oberfläche angezeigt oder von der App geloggt, kann aber von Websitebesuchern aus dem Browser gelesen werden. Niemals einen Metered Secret/Signing Key einsetzen.
-
-Laut offizieller Metered-Dokumentation benötigt automatische TURN-Injection einen **aktiven TURN-Dienst im Metered-Konto** und die eingeschaltete Option **Auto-inject TURN credentials**. Ein Publishable Key allein beweist nicht, dass TURN aktiv ist. Die App überschreibt die vom SDK gelieferten ICE-Server nicht und bevorzugt direkte Verbindungen, erlaubt aber TURN.
-
-Den Key auf Channels `game-*` begrenzen; benötigt werden `subscribe`, `presence` und `send` (die App verwendet keinen Broadcast über `publish`). Einrichtungsberechtigungen sind im Metered-Dashboard zu prüfen. Publishable Keys sind laut Dokumentation **nicht nach Website-Origin beschränkt**. Kopierte Keys können daher fremde Nutzung und TURN-Kontingentverbrauch ermöglichen. Kontingente/Kosten im Konto prüfen und bei Missbrauch den Key widerrufen/ersetzen. App-seitige Freigaben schützen die Spielfotos, ersetzen aber keine serverseitigen Kontingent- und Missbrauchsgrenzen. Ohne Backend gibt es keine pro Benutzer ausgestellten Server-Tokens.
-
-Offizielle Dokumentation:
-- [Authentifizierung und automatische TURN-Injection](https://www.metered.ca/docs/realtime-messaging/sdk-javascript/guides/authentication/)
-- [MeteredPeer](https://www.metered.ca/docs/realtime-messaging/sdk-javascript/api-reference/metered-peer/)
-- [Reconnect und connection-reset](https://www.metered.ca/docs/realtime-messaging/sdk-javascript/guides/reconnect-best-practices/)
-
-## Datenwege
-
-| Daten | Weg |
-|---|---|
-| Webseite | Vercel → Browser; technisch notwendige Abrufdaten beim Host |
-| Verbindungsdaten, Beitritte, Freigaben, Namen, Prompt, Runde, Stimmen, Punkte | Kleine validierte Nachrichten über Metered Realtime/Signaling; Dienst ist hierbei ein Datenempfänger |
-| Foto | File Picker → Canvas (JPEG/WebP, maximal 1280 px, Ziel bis 400 KB, hartes Empfangslimit 1 MB) → RAM → eigener zuverlässiger RTCDataChannel → bestätigtes Spielgerät |
-| Bei blockierter Direktverbindung | Derselbe Ende-zu-Ende-verschlüsselte WebRTC-Verkehr über Metered TURN; keine Bilddateien im Messaging/HTTP/Cloud Storage |
-
-Fotos werden nie als JSON/Base64 über `peer.send`, `peer.sendTo`, WebSocket, HTTP, fetch, FormData oder REST verschickt. Die App hat keine solchen alternativen Bildpfade. QR-Codes enthalten nur Einladungslinks und werden lokal auf Canvas gezeichnet. Originaldateien werden nicht versendet; Canvas-Neucodierung übernimmt kein EXIF/GPS.
-
-Lokal gespeichert werden Spieler-ID, separate Display-ID und Anzeigename; Toneinstellungen dürfen ebenfalls lokal bleiben. Fotos, Blob URLs, Chunks und Foto-Hashes werden nicht persistiert. Bild-/Chunk-Referenzen und Object URLs werden nach der Runde bzw. beim Verlassen aufgeräumt. Das ist keine garantierte physische Speicherlöschung durch das Betriebssystem. Freigegebene Mitspieler können Screenshots erstellen; der Host kennt die Urheber.
-
-## Wiederverbinden
-
-Die App-ID und die temporäre Metered-Peer-ID sind getrennt. Eine RAM-basierte Signaturidentität bindet Wiederanmeldungen an denselben Teilnehmer; die öffentlich bekannte Spieler-ID allein reicht nicht aus. Der Host behält getrennte Spieler einschließlich Punkten und Einreichungen mindestens fünf Minuten (bis zum Entfernen/Spielende). Ein überlebender Browser-Tab kann mit neuer Peer-ID ohne neue Freigabe weiterarbeiten.
-
-Bei `connection-reset` werden alter Kanal, Listener und Transfers entfernt. Genau die vom SDK als impolite bestimmte Seite öffnet auf der **neuen** PeerConnection den Fotokanal; die andere nimmt `data-channel` entgegen. Sichtbarkeit, `pageshow`, Online/Offline-Ereignisse und regelmäßige Zustandsprüfungen unterstützen die SDK-Wiederverbindung. Bei längerem Stillstand wird die Metered-Sitzung neu aufgebaut, der Spielstand bleibt im Controller erhalten.
-
-**Browser-Reload ist anders als kurzzeitiges Sperren:** RAM-Schlüssel gehen beim echten Reload verloren. Derselbe Spieler/dasselbe Display braucht deshalb eine erneute Host-Freigabe. Spieler-ID und Punktestand können erhalten bleiben, private Bilder kommen nicht aus einem Browser-Cache zurück. Bei einem Display-Reload werden nach Freigabe nur aktuelle öffentliche Zustände und bereits enthüllte Fotos erneut übertragen. Reload/Schließen/OS-Verwerfen des **Host-Tabs** beendet die Partie; ohne persistente Host-Speicherung oder Backend gibt es keine Host-Migration.
-
-Verfügbarkeit, Mobilfunk-/Firmenfirewalls, iOS-Hintergrundregeln, Browser-Prozessbeendigung und Dienstkontingente können weiterhin Verbindungen verhindern. Es gibt keine Zusicherung „in jedem Netzwerk“ oder „unangreifbar“. Einladungslinks prüfen den mitgeteilten Host-Schlüssel; bei manueller Code-Eingabe wird der erste gültig signierte Host beim ersten Beitritt vertraut. Den Code privat teilen und Prüfkennungen vergleichen. Bereits empfangene Bilder lassen sich bei entfernten Mitspielern nicht zurückrufen.
-
-Details und die konkrete manuelle Gerätetestliste stehen in [NETWORK_MIGRATION.md](NETWORK_MIGRATION.md).
+Quellen: [Cloudflare TURN Credentials](https://developers.cloudflare.com/realtime/turn/generate-credentials/), [Realtime Pricing](https://developers.cloudflare.com/realtime/sfu/platform/pricing/), [Durable Objects Free](https://developers.cloudflare.com/durable-objects/platform/pricing/), [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/), [GitHub → Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/).

@@ -155,17 +155,10 @@ export class GameController {
     };
   }
   private startPolling(epoch:number) {
-    let checking=false;
-    const poll=async()=>{
-      if(epoch!==this.epoch||!this.session)return;
-      if(import.meta.env.DEV&&this.session.diagnostics){const diagnostic=await this.session.diagnostics();if(epoch===this.epoch)this.patch({diagnostic});}
-      if(checking||!['PLAYER','DISPLAY'].includes(this.state.role??'')||this.state.stage!=='connected')return;
-      checking=true;
-      try{await this.send(this.host,{type:'ready'});if(epoch===this.epoch)this.patch({online:true});}
-      catch{if(epoch===this.epoch)this.patch({online:false,status:'Keine Antwort vom Host. Tab und Verbindung dort prüfen.'});}
-      finally{checking=false;}
-    };
-    this.poll=setInterval(()=>void poll(),8_000);void poll();
+    // State arrives on each change. This timer only refreshes local development diagnostics;
+    // reconnect is handled by the room transport, not a full sync every eight seconds.
+    if(!import.meta.env.DEV)return;
+    this.poll=setInterval(()=>{if(epoch===this.epoch&&this.session?.diagnostics)void this.session.diagnostics().then(diagnostic=>{if(epoch===this.epoch)this.patch({diagnostic});});},15_000);
   }
   private async control(data:unknown,id:string) {
     const msg=decodeMessage(data);if(!msg)throw new Error('Ungültige Nachricht.');
@@ -314,9 +307,9 @@ export class GameController {
     try {if(this.state.role==='HOST')this.publish(castVote(game,'host',id));else await this.send(this.host,{type:'vote',photoId:id,roundId:game.roundId});this.deps.sound('vote');}
     catch(e){if(epoch===this.epoch)this.fail(e);}finally{if(epoch===this.epoch)this.patch({busy:false});}
   };
-  begin = (categories:Category[]) => {
+  begin = (categories:Category[],packs?:string[]) => {
     const game=this.state.game;if(!game||this.state.role!=='HOST'||this.state.countdown)return;
-    try{nextRound(game,categories,this.used);}catch(e){this.fail(e);return;}
+    try{nextRound(game,categories,this.used,Math.random,packs);}catch(e){this.fail(e);return;}
     if(game.players.some(p=>!p.connected)){this.fail(new Error('Bitte auf getrennte Spieler warten oder sie entfernen.'));return;}
     const epoch=this.epoch;this.gate.clear();let value=3;
     const tick=()=>{
@@ -325,7 +318,7 @@ export class GameController {
       for(const p of this.state.game!.players)if(p.id!=='host')void this.send(p.id,{type:'countdown',value}).catch(()=>{});
       for(const [id,d] of this.displays)if(d.connected)void this.send(id,{type:'countdown',value}).catch(()=>{});
       if(value){this.deps.sound('countdown');value--;this.countdownTimer=setTimeout(tick,1000);}
-      else {try{const next=nextRound(this.state.game!,categories,this.used);this.used.push(next.prompt);this.publish(next);this.deps.sound('prompt');}catch(e){this.fail(e);}}
+      else {try{const next=nextRound(this.state.game!,categories,this.used,Math.random,packs);this.used.push(next.prompt);this.publish(next);this.deps.sound('prompt');}catch(e){this.fail(e);}}
     };tick();
   };
   remove = (id:string) => {
