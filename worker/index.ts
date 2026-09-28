@@ -43,8 +43,10 @@ export class RateGate extends DurableObject<Env> {
     const current = !value || now - value.start > 3_600_000 ? { start: now, count: 0 } : value;
     if (current.count >= max) return new Response(null, { status: 429 });
     await this.ctx.storage.put(key, { ...current, count: current.count + 1 });
+    if (!await this.ctx.storage.getAlarm()) await this.ctx.storage.setAlarm(now + 2 * 3_600_000);
     return new Response(null, { status: 204 });
   }
+  async alarm() { await this.ctx.storage.deleteAll(); }
 }
 
 /** One live room. Text only: SDP/ICE, approval and game controls; no photo bytes. */
@@ -69,7 +71,7 @@ export class Lobby extends DurableObject<Env> {
       const saved = await this.ctx.storage.get<{ hash: string; created: number }>('host');
       if (saved && Date.now() - saved.created < 8 * 3_600_000 && (!ticket || await hash(ticket) !== saved.hash)) return new Response('Lobby bereits vergeben.', { status: 409 });
       if (saved && ticket && await hash(ticket) === saved.hash) hostToken = ticket;
-      else { hostToken = `${crypto.randomUUID()}${crypto.randomUUID()}`; await this.ctx.storage.put('host', { hash: await hash(hostToken), created: Date.now() }); }
+      else { hostToken = `${crypto.randomUUID()}${crypto.randomUUID()}`; await this.ctx.storage.put('host', { hash: await hash(hostToken), created: Date.now() }); await this.ctx.storage.setAlarm(Date.now() + 8 * 3_600_000); }
     } else if (!this.host()) return deny();
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
@@ -123,4 +125,5 @@ export class Lobby extends DurableObject<Env> {
     for (const other of this.sockets.values()) send(other, { type: 'peer-left', id: self.id });
     if (self.role === 'HOST') for (const guest of this.guests()) { const member = this.member(guest); guest.serializeAttachment({ ...member, approved: false }); }
   }
+  async alarm() { await this.ctx.storage.delete('host'); }
 }
