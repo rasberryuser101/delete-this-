@@ -51,6 +51,18 @@ const controllers:GameController[]=[];
 function create(net:ReturnType<typeof network>, process:()=>Promise<Blob>=async()=>jpeg){const c=new GameController({session:net.session,process,receive:(data,meta)=>receivePhoto(data,meta,async()=>{}),sound:()=>{}});controllers.push(c);return c;}
 beforeEach(()=>vi.useFakeTimers());
 afterEach(()=>{controllers.splice(0).forEach(c=>c.leave());vi.useRealTimers();});
+it('wiederholt eine fehlgeschlagene Host-Erstellung mit demselben Namen und Modus',async()=>{
+  const net=network();
+  const session=vi.fn().mockRejectedValueOnce(new Error('Schutzpause')).mockImplementation(net.session);
+  const host=new GameController({session,sound:()=>{}});controllers.push(host);
+  await host.create('Test','REMOTE');
+  expect(host.snapshot().error).toBe('Schutzpause');expect(host.snapshot().role).toBeNull();
+  await host.retry();
+  expect(session).toHaveBeenCalledTimes(2);
+  expect(host.snapshot().game?.players[0].name).toBe('Test');
+  expect(host.snapshot().game?.mode).toBe('REMOTE');expect(host.snapshot().busy).toBe(false);
+  expect(host.snapshot().error).toBe('');
+});
 async function pair(mode:'PARTY'|'REMOTE'='REMOTE') {
   const net=network(),host=create(net),guest=create(net);await host.create('Host',mode);
   const join=guest.join('Gast',host.snapshot().roomCode);await flush();

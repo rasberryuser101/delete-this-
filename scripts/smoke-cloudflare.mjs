@@ -71,6 +71,21 @@ try {
   for(let i=0;i<161;i++)retry.ws.send('null');
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.equal(retry.ws.readyState, WebSocket.CLOSED, 'Auch ungültige Nachrichten zählen zum Spam-Limit');
+  const unusedCode = Array.from(randomBytes(10), byte => alphabet[byte % alphabet.length]).join('');
+  const missing = await connect(unusedCode, 'GUEST');
+  assert.match((await missing.next('error')).message, /Lobby nicht gefunden/);
+  // Two host attempts above plus eight = the configured hourly limit.
+  for (let i = 0; i < 8; i++) {
+    const extra = await connect(Array.from(randomBytes(10), byte => alphabet[byte % alphabet.length]).join(''), 'HOST');
+    await extra.next('welcome'); extra.ws.close();
+  }
+  const denied = await connect(unusedCode, 'HOST');
+  assert.match((await denied.next('error')).message, /Schutzpause.*60 Minuten/);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(denied.ws.readyState, WebSocket.CLOSED, 'Abgelehnter Socket wird sofort geschlossen');
+  assert.equal(denied.inbox.some(m => m.type === 'welcome'), false, 'Rate-Limit darf keinen Lobbyzugang erteilen');
+  const stillMissing = await connect(unusedCode, 'GUEST');
+  assert.match((await stillMissing.next('error')).message, /Lobby nicht gefunden/, 'Abgelehnter Host hat keine Lobby erstellt');
   console.log('Cloudflare Worker: Lobby, erneuter Beitritt, Freigabeentzug, Spam-Limit, TURN-Zugang und Isolation geprüft.');
 } finally {
   for (const ws of clients) ws.close();

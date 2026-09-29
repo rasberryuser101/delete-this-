@@ -22,6 +22,7 @@ export class GameController {
   private session:LobbySession|null = null;
   private displays=new Map<string,{name:string;connected:boolean}>();
   private lastJoin:{name:string;code:string;role:'PLAYER'|'DISPLAY';hostKey?:string}|null=null;
+  private lastHost:{name:string;mode:Mode}|null=null;
   private host = '';
   private allowed = new Map<string,string>();
   private gate = new AdmissionGate(requests => this.patch({requests}));
@@ -80,6 +81,7 @@ export class GameController {
     let epoch=this.epoch;
     try {
       const clean=this.checkName(name); this.leave();epoch=this.epoch;
+      this.lastHost={name:clean,mode};this.lastJoin=null;
       const code=makeRoomCode();this.patch({game:createGame(clean,mode),role:'HOST',roomCode:code,busy:true,status:'Sichere Lobby wird geöffnet …',stage:'connected'});
       const session=await this.deps.session({code,role:'HOST',signal:this.lifetime.signal,onStatus:status=>{if(epoch===this.epoch)this.patch({status,...(status.includes('fehlgeschlagen')?{online:false}:status==='Verbunden'||status==='Wieder verbunden'?{online:true}:{})});},canPhoto:(...args)=>this.canPhoto(...args),authorize:async(id,remote)=>{
         if(epoch!==this.epoch)throw new Error('Lobby beendet.');
@@ -114,6 +116,7 @@ export class GameController {
     try {
       const clean=this.checkName(name), code=normalizeRoomCode(input);if(/^https?:\/\//.test(input.trim()))expectedHostKey=new URLSearchParams(new URL(input.trim()).hash.split('?')[1]??'').get('host')??expectedHostKey;this.leave();epoch=this.epoch;
       this.lastJoin={name:clean,code,role:guestRole,hostKey:expectedHostKey};
+      this.lastHost=null;
       this.patch({role:guestRole,roomCode:code,busy:true,stage:'search',status:'Suche Lobby …'});
       let rejectJoin!:(e:Error)=>void, resolveJoin!:()=>void;
       const joined=new Promise<void>((resolve,reject)=>{resolveJoin=resolve;rejectJoin=reject;});
@@ -233,7 +236,7 @@ export class GameController {
     if(direction==='send')return this.state.role==='PLAYER'&&visibility==='PRIVATE'&&g.phase==='submit';
     return visibility==='PUBLIC'&&(this.state.role==='DISPLAY'||g.mode==='REMOTE')&&visiblePhotos(g).some(p=>p.id===meta.id);
   }
-  retry = async()=>{this.clearError();if(this.session)await this.session.recover?.();else if(this.lastJoin)await this.join(this.lastJoin.name,this.lastJoin.code,this.lastJoin.role,this.lastJoin.hostKey);};
+  retry = async()=>{if(this.state.busy)return;this.clearError();if(this.session)await this.session.recover?.();else if(this.lastHost)await this.create(this.lastHost.name,this.lastHost.mode);else if(this.lastJoin)await this.join(this.lastJoin.name,this.lastJoin.code,this.lastJoin.role,this.lastJoin.hostKey);};
   submit = async(file:File) => {
     const game=this.state.game, epoch=this.epoch;
     if(this.state.role==='DISPLAY'||!game||game.phase!=='submit'||this.state.busy||!this.state.online)return;

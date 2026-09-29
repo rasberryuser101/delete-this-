@@ -6,9 +6,24 @@ import { withDeadline, type PhotoAction, type PhotoMetadata } from './transfer';
 import type { RequestAction } from './actions';
 export { parsePhotoMetadata } from './transfer';
 
-export const BUILD = '6.3';
+export const BUILD = '6.3.1';
 export const CONNECTION_ERROR = 'Lobby nicht gefunden oder Verbindung fehlgeschlagen. Link prüfen und erneut versuchen.';
 export const NETWORK_ERROR = 'Verbindung fehlgeschlagen. Internet prüfen und erneut versuchen.';
+export const HOST_CONNECTION_ERROR = 'Die Lobby konnte nicht geöffnet werden. Internet-/VPN-/Inhaltsblocker-Einstellungen prüfen und erneut versuchen.';
+
+/** Only used after a failed handshake. No codes, identities or photos are sent. */
+export async function diagnoseSocketFailure(role: Role): Promise<string> {
+  try {
+    const response = await fetch(new URL('/api/status', location.origin), { cache: 'no-store', signal: AbortSignal.timeout(2500) });
+    if (response.status === 404 || (response.ok && !response.headers.get('Content-Type')?.includes('application/json'))) {
+      return 'Unter dieser Adresse läuft kein Lobby-Dienst. Bitte die aktuelle Spieladresse verwenden, nicht einen alten Vercel- oder Vorschau-Link.';
+    }
+    if (!response.ok) return 'Der Lobby-Dienst ist gerade nicht erreichbar. Bitte später erneut versuchen.';
+    const status: unknown = await response.json();
+    if (!status || typeof status !== 'object' || !('turn' in status) || typeof status.turn !== 'boolean') return 'Diese Spieladresse unterstützt keine Lobbys. Bitte die aktuelle Spieladresse öffnen.';
+  } catch { /* No details or server responses are logged. */ }
+  return role === 'HOST' ? HOST_CONNECTION_ERROR : CONNECTION_ERROR;
+}
 export const JOIN_TIMEOUT_MS = 90_000;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const STUN: RTCIceServer[] = [{ urls: 'stun:stun.cloudflare.com:3478' }];
@@ -147,7 +162,13 @@ export class CloudflareLobby {
       if (this.hostToken) url.searchParams.set('ticket', this.hostToken);
       const ws = new WebSocket(url); this.ws = ws;
       let welcomed = false;
-      const timer = setTimeout(() => { ws.close(); reject(new Error(NETWORK_ERROR)); }, 15_000);
+      let failed = false;
+      const fail = () => {
+        if (welcomed || failed || this.closed) return;
+        failed = true; clearTimeout(timer);
+        void diagnoseSocketFailure(this.options.role).then(message => reject(new Error(message)));
+      };
+      const timer = setTimeout(() => { fail(); ws.close(); }, 15_000);
       ws.onmessage = event => {
         if (this.ws !== ws || this.closed || typeof event.data !== 'string' || event.data.length > 32_768) return;
         let msg: Incoming; try { msg = JSON.parse(event.data) as Incoming; } catch { return; }
@@ -158,7 +179,7 @@ export class CloudflareLobby {
           this.turnReady = new Promise<void>(done => { this.turnResolve = done; });
           if (this.options.role === 'HOST') this.requestTurn();
           resolve();
-        } else if (msg.type === 'error') { if (!welcomed) { clearTimeout(timer); reject(new Error(msg.message || CONNECTION_ERROR)); } else this.options.onStatus?.(msg.message || NETWORK_ERROR); }
+        } else if (msg.type === 'error') { if (!welcomed) { failed = true; clearTimeout(timer); reject(new Error(typeof msg.message === 'string' && msg.message ? msg.message : NETWORK_ERROR)); } else this.options.onStatus?.(msg.message || NETWORK_ERROR); }
         else if (welcomed && msg.type === 'turn') {
           clearTimeout(this.turnTimer);
           if (validIce(msg.iceServers)) {
@@ -174,8 +195,8 @@ export class CloudflareLobby {
           this.options.onJoinError?.(this.remoteIds.get(msg.from) || msg.from, 'WebRTC-Aufbau fehlgeschlagen. Beide Seiten neu laden und erneut beitreten.');
         });
       };
-      ws.onerror = () => { if (!welcomed) { clearTimeout(timer); reject(new Error(CONNECTION_ERROR)); } };
-      ws.onclose = () => { if (this.ws !== ws || this.closed) return; clearTimeout(timer); if (!welcomed) reject(new Error(CONNECTION_ERROR)); this.turnResolve?.(); this.turnResolve = null; for (const remote of this.pcs.keys()) this.left(remote); this.options.onStatus?.('Verbindung unterbrochen. Wiederverbinden …'); };
+      ws.onerror = fail;
+      ws.onclose = () => { if (this.ws !== ws || this.closed) return; clearTimeout(timer); if (!welcomed) { fail(); return; } this.turnResolve?.(); this.turnResolve = null; for (const remote of this.pcs.keys()) this.left(remote); this.options.onStatus?.('Verbindung unterbrochen. Wiederverbinden …'); };
     });
   }
   private async announce(remote: string) {

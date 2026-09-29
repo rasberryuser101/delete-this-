@@ -17,6 +17,15 @@ const json = (data: unknown) => JSON.stringify(data);
 const send = (socket: WebSocket, data: unknown) => { try { socket.send(json(data)); } catch { /* disconnected */ } };
 const hash = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
 const deny = () => new Response('Nicht verfügbar.', { status: 404 });
+// A failed HTTP upgrade is opaque in browser WebSocket APIs. Send an error
+// frame and immediately close; never register a denied socket in a lobby.
+function rejectSocket(message: string): Response {
+  const [client, server] = Object.values(new WebSocketPair());
+  server.accept();
+  send(server, { type: 'error', message });
+  server.close(1008, 'Verbindung abgelehnt');
+  return new Response(null, { status: 101, webSocket: client });
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -33,16 +42,24 @@ export default {
     // just because a project was deployed before the binding existed.
     if (env.ENTRY_LIMIT) {
       try {
-        if (!(await env.ENTRY_LIMIT.limit({ key: ip })).success) return new Response('Bitte kurz warten.', { status: 429 });
+        if (!(await env.ENTRY_LIMIT.limit({ key: ip })).success) return rejectSocket('Zu viele Versuche in kurzer Zeit. Bitte eine Minute warten und dann erneut versuchen.');
       } catch {
         // Continue with the persistent RateGate limiter below.
       }
     }
     const ipKey = await hash(`${env.TURN_KEY_TOKEN || 'local-dev'}|${ip}`);
-    const allowed = await env.RATE.get(env.RATE.idFromName(ipKey)).fetch('https://rate/attempt', { method: 'POST', body: role });
-    if (!allowed.ok) return new Response('Zu viele Verbindungsversuche. Später erneut probieren.', { status: 429 });
-    const room = env.ROOMS.get(env.ROOMS.idFromName(code));
-    return room.fetch(new Request(`https://room.internal/join?role=${role}&ticket=${encodeURIComponent(url.searchParams.get('ticket') || '')}&ip=${ipKey}`, request));
+    try {
+      const allowed = await env.RATE.get(env.RATE.idFromName(ipKey)).fetch('https://rate/attempt', { method: 'POST', body: role });
+      if (allowed.status === 429) {
+        const minutes = Math.max(1, Math.ceil(Number(allowed.headers.get('Retry-After') || 3600) / 60));
+        return rejectSocket(`Die Schutzpause für ${role === 'HOST' ? 'neue Lobbys' : 'Beitrittsversuche'} ist aktiv. Bitte in etwa ${minutes} Minute${minutes === 1 ? '' : 'n'} erneut versuchen. Geräte im selben Netzwerk teilen dieses Limit.`);
+      }
+      if (!allowed.ok) return rejectSocket('Der Lobby-Dienst ist vorübergehend nicht verfügbar. Bitte später erneut versuchen.');
+      const room = env.ROOMS.get(env.ROOMS.idFromName(code));
+      return await room.fetch(new Request(`https://room.internal/join?role=${role}&ticket=${encodeURIComponent(url.searchParams.get('ticket') || '')}&ip=${ipKey}`, request));
+    } catch {
+      return rejectSocket('Der Lobby-Dienst konnte nicht gestartet werden. Bitte später erneut versuchen oder den Betreiber informieren.');
+    }
   }
 };
 
@@ -54,7 +71,7 @@ export class RateGate extends DurableObject<Env> {
     const rule = rateRule(role);
     const value = await this.ctx.storage.get<Counter>(rule.key);
     const next = consume(value, now, rule);
-    if (!next) return new Response(null, { status: 429 });
+    if (!next) return new Response(null, { status: 429, headers: { 'Retry-After': String(Math.max(1, Math.ceil(((value?.start ?? now) + rule.window - now) / 1000))) } });
     await this.ctx.storage.put(rule.key, next);
     if (!await this.ctx.storage.getAlarm()) await this.ctx.storage.setAlarm(now + rule.window * 2);
     return new Response(null, { status: 204 });
@@ -77,15 +94,16 @@ export class Lobby extends DurableObject<Env> {
   private guests(): WebSocket[] { return [...this.sockets.values()].filter(ws => this.member(ws).role === 'GUEST'); }
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url), role = url.searchParams.get('role'), ticket = url.searchParams.get('ticket') || '';
-    if ((role !== 'HOST' && role !== 'GUEST') || this.sockets.size >= 14) return deny();
+    if (role !== 'HOST' && role !== 'GUEST') return deny();
+    if (this.sockets.size >= 14) return rejectSocket('Diese Lobby ist voll. Bitte den Host kontaktieren.');
     let hostToken = '';
     if (role === 'HOST') {
-      if (this.host()) return new Response('Lobby bereits geöffnet.', { status: 409 });
+      if (this.host()) return rejectSocket('Die Lobby ist bereits geöffnet. Bitte zur bestehenden Lobby zurückkehren.');
       const saved = await this.ctx.storage.get<{ hash: string; created: number }>('host');
-      if (saved && Date.now() - saved.created < 8 * 3_600_000 && (!ticket || await hash(ticket) !== saved.hash)) return new Response('Lobby bereits vergeben.', { status: 409 });
+      if (saved && Date.now() - saved.created < 8 * 3_600_000 && (!ticket || await hash(ticket) !== saved.hash)) return rejectSocket('Dieser Lobbycode ist bereits vergeben. Bitte eine neue Lobby erstellen.');
       if (saved && ticket && await hash(ticket) === saved.hash) hostToken = ticket;
       else { hostToken = `${crypto.randomUUID()}${crypto.randomUUID()}`; await this.ctx.storage.put('host', { hash: await hash(hostToken), created: Date.now() }); await this.ctx.storage.setAlarm(Date.now() + 8 * 3_600_000); }
-    } else if (!this.host()) return deny();
+    } else if (!this.host()) return rejectSocket('Lobby nicht gefunden. Bitte den Link prüfen und den Host bitten, die Lobby geöffnet zu lassen.');
     const pair = new WebSocketPair(); const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
     const member: Member = { id: crypto.randomUUID(), role, approved: role === 'HOST', ip: url.searchParams.get('ip') || '', window: Date.now(), count: 0 };
@@ -148,4 +166,3 @@ export class Lobby extends DurableObject<Env> {
   }
   async alarm() { for (const ws of this.sockets.values()) ws.close(1000, 'Lobby abgelaufen'); this.sockets.clear(); await this.ctx.storage.deleteAll(); }
 }
-
