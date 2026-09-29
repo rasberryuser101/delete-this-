@@ -40,6 +40,7 @@ try {
   const guest = await connect(code, 'GUEST'); const joined = await guest.next('welcome');
   assert.equal((await host.next('peer-joined')).id, joined.id);
   assert.equal((await guest.next('peer-joined')).id, welcome.id);
+  guest.ws.send('null'); guest.ws.send('[]'); guest.ws.send('not-json');
   guest.ws.send(JSON.stringify({ type: 'turn' }));
   guest.ws.send(JSON.stringify({ type: 'route', to: welcome.id, data: { type: 'CONTROL', requestId: 'x', message: { type: 'ready' } } }));
   await new Promise(resolve => setTimeout(resolve, 120));
@@ -60,7 +61,17 @@ try {
   other.ws.send(JSON.stringify({ type: 'route', to: joined.id, data: { type: 'CONTROL', requestId: 'x', message: { type: 'ready' } } }));
   await new Promise(resolve => setTimeout(resolve, 120));
   assert.equal(guest.inbox.some(m => m.type === 'route'), false, 'Lobbys bleiben voneinander getrennt');
-  console.log('Cloudflare Worker: Lobby, Freigabe, TURN-Zugang und Isolation geprüft.');
+  host.ws.send(JSON.stringify({ type: 'route', to: joined.id, data: { type: 'DENIED' } }));
+  assert.equal((await guest.next('route')).data.type, 'DENIED');
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(guest.ws.readyState, WebSocket.CLOSED, 'Entfernte Gäste verlieren die Serververbindung');
+  const retry = await connect(code, 'GUEST'); const retryWelcome = await retry.next('welcome');
+  host.ws.send(JSON.stringify({ type: 'route', to: retryWelcome.id, data: { type: 'APPROVED', id: 'guest', role: 'PLAYER' } }));
+  assert.equal((await retry.next('route')).data.type, 'APPROVED', 'Neue Anfrage bleibt nach Ablehnung möglich');
+  for(let i=0;i<161;i++)retry.ws.send('null');
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(retry.ws.readyState, WebSocket.CLOSED, 'Auch ungültige Nachrichten zählen zum Spam-Limit');
+  console.log('Cloudflare Worker: Lobby, erneuter Beitritt, Freigabeentzug, Spam-Limit, TURN-Zugang und Isolation geprüft.');
 } finally {
   for (const ws of clients) ws.close();
   worker.kill('SIGTERM');

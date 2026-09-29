@@ -2,12 +2,12 @@ export type Sound = 'button'|'connected'|'prompt'|'countdown'|'submit'|'reveal'|
 let context: AudioContext | null = null;
 let master: GainNode | null = null;
 let muted = false;
-let musicEnabled = true;
+let musicEnabled = false;
 let active = false;
 let timer: number | undefined;
 let nextBeat = 0;
 let beat = 0;
-const tempo = 132;
+const tempo = 88;
 const step = 60 / tempo / 2;
 const melody = [523,0,659,784,0,659,587,0,523,0,440,523,0,392,440,0,587,0,698,880,0,698,659,0,587,0,523,440,0,392,523,0];
 const bass = [131,131,175,175,147,147,131,131];
@@ -38,11 +38,8 @@ function schedule(): void {
   nextBeat=Math.max(nextBeat,context.currentTime-.03); // No burst of missed beats after an iOS tab resumes.
   while(nextBeat<context.currentTime+.25) {
     const slot=beat%melody.length;
-    if(melody[slot]) note(melody[slot],nextBeat,.17,.025,'sine');
-    if(slot%4===0) note(bass[Math.floor(slot/4)],nextBeat,.37,.025,'triangle');
-    if(slot%4===0) drum(nextBeat,'kick');
-    if(slot%4===2) drum(nextBeat,'snare');
-    if(slot%2===1) drum(nextBeat,'hat');
+    if(slot%4===0&&melody[slot]) note(melody[slot]/2,nextBeat,1.1,.012,'sine');
+    if(slot%8===0) note(bass[Math.floor(slot/4)],nextBeat,1.8,.012,'sine');
     beat++; nextBeat+=step;
   }
   timer=window.setTimeout(schedule,80);
@@ -62,7 +59,7 @@ export function play(sound:Sound): void {
   try {
     const at=audio().currentTime+.005;
     if(sound==='drumroll'){for(let i=0;i<14;i++)drum(at+i*.065,'snare');note(784,at+.92,.24,.05);return;}
-    if(sound==='camera'){note(1800,at,.045,.04,'square');note(240,at+.055,.06,.04,'triangle');return;}
+    if(sound==='camera'){drum(at,'kick');note(1800,at,.045,.035,'square');[196,294,392].forEach((f,i)=>note(f,at+.07+i*.025,.42,.035,'triangle'));return;}
     const tones:Record<Sound,number[]>={
       button:[440,660], connected:[392,523,659,784], prompt:[784,988,1175],countdown:[660],
       submit:[520,780,1040],reveal:[392,587,784,1175],vote:[784,1046],

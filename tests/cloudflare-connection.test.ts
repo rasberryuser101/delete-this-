@@ -7,6 +7,7 @@ type Msg = { type: string; id?: string; to?: string; from?: string; data?: { typ
 const webSockets = new Map<string, FakeSocket>();
 let nextSocket = 0;
 let guestOpenDelay = 0;
+let tamperSignal = '';
 class FakeSocket {
   static OPEN = 1;
   readyState = 0;
@@ -33,7 +34,7 @@ class FakeSocket {
   send(text: string) {
     const msg = JSON.parse(text) as Msg; this.sent.push(msg);
     if (msg.type === 'turn') this.inbound({ type: 'turn', iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] });
-    if (msg.type === 'route') webSockets.get(msg.to!)?.inbound({ type: 'route', from: this.id, data: msg.data });
+    if (msg.type === 'route') webSockets.get(msg.to!)?.inbound({ type: 'route', from: this.id, data: msg.data?.type===tamperSignal ? {...msg.data,sdp:'changed-after-signing'} : msg.data });
   }
   close() { if (this.readyState !== FakeSocket.OPEN) return; this.readyState = 3; webSockets.delete(this.id); for (const other of webSockets.values()) other.inbound({ type: 'peer-left', id: this.id }); this.onclose?.(); }
 }
@@ -76,7 +77,7 @@ class FakePC {
   close() { this.connectionState = 'closed'; this.channels?.a.close(); this.channels?.b.close(); connections.delete(this.id); }
 }
 const sessions: CloudflareLobby[] = [];
-afterEach(async () => { await Promise.all(sessions.splice(0).map(s => s.close())); webSockets.clear(); connections.clear(); guestOpenDelay = 0; vi.unstubAllGlobals(); });
+afterEach(async () => { await Promise.all(sessions.splice(0).map(s => s.close())); webSockets.clear(); connections.clear(); guestOpenDelay = 0; tamperSignal = ''; vi.unstubAllGlobals(); });
 
 it.each([0, 150])('wartet auf beide Datenkanäle (Gast %i ms später) und überträgt freigegebene Fotos', async (delay) => {
   guestOpenDelay = delay;
@@ -102,4 +103,19 @@ it.each([0, 150])('wartet auf beide Datenkanäle (Gast %i ms später) und übert
   await guest.session.photo.request(bytes, { target: 'host', metadata: { version: 2, id: 'photo', roundId: 'round', bytes: 4, mime: 'image/jpeg' } });
   expect(receivePhoto).toHaveBeenCalledOnce();
   expect([...webSockets.values()].flatMap(ws => ws.sent).some(m => JSON.stringify(m).includes('255,216,255'))).toBe(false);
+});
+
+it.each(['OFFER','ANSWER'])('verwirft manipulierte %s-Verbindungsangebote trotz gültiger Gerätefreigabe',async kind=>{
+ tamperSignal=kind;
+ vi.stubGlobal('isSecureContext',true);vi.stubGlobal('location',{origin:'https://example.org'});
+ vi.stubGlobal('window',{addEventListener(){},removeEventListener(){}});vi.stubGlobal('document',{addEventListener(){},removeEventListener(){}});
+ vi.stubGlobal('WebSocket',FakeSocket);vi.stubGlobal('RTCPeerConnection',FakePC);
+ const host=new CloudflareLobby({code:'ABCDEFGH23',role:'HOST',authorize:()=>{},canPhoto:()=>true},await makeIdentity('host'));
+ sessions.push(host);await host.start();const joined=vi.fn();host.session.room.onPeerJoin=joined;
+ const guest=new CloudflareLobby({code:'ABCDEFGH23',role:'PLAYER',name:'Gast',expectedHostKey:host.session.publicKey,authorize:()=>{},canPhoto:()=>true},await makeIdentity('guest'));
+ sessions.push(guest);await guest.start();
+ await vi.waitFor(()=>expect([...webSockets.values()].flatMap(ws=>ws.sent).some(m=>m.data?.type===kind)).toBe(true));
+ await new Promise(resolve=>setTimeout(resolve,50));
+ expect(joined).not.toHaveBeenCalled();
+ expect([...connections.values()].some(pc=>pc.remoteDescription?.sdp==='changed-after-signing')).toBe(false);
 });

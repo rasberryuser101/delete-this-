@@ -9,8 +9,8 @@ import { play, type Sound } from './sound';
 import { isReaction, type Reaction } from './party';
 
 type Stage = 'idle'|'search'|'approval'|'connecting'|'connected'|'error';
-export type PlayState = {game:Game|null; role:'HOST'|'PLAYER'|'DISPLAY'|null; you:string; roomCode:string; hostKey:string; busy:boolean; status:string; error:string; countdown:number; progress:number; images:Record<string,string>; requests:JoinRequest[]; displays:{id:string;name:string;connected:boolean}[]; stage:Stage; diagnostic:string; check:string; online:boolean; reaction:{id:string;emoji:Reaction}|null};
-const initial = (): PlayState => ({game:null,role:null,you:'host',roomCode:'',hostKey:'',busy:false,status:'',error:'',countdown:0,progress:0,images:{},requests:[],displays:[],stage:'idle',diagnostic:'',check:'',online:true,reaction:null});
+export type PlayState = {game:Game|null; role:'HOST'|'PLAYER'|'DISPLAY'|null; you:string; roomCode:string; hostKey:string; busy:boolean; status:string; error:string; countdown:number; progress:number; images:Record<string,string>; requests:JoinRequest[]; displays:{id:string;name:string;connected:boolean}[]; stage:Stage; diagnostic:string; check:string; online:boolean; reaction:{id:string;emoji:Reaction}|null; autoReveal:boolean};
+const initial = (): PlayState => ({game:null,role:null,you:'host',roomCode:'',hostKey:'',busy:false,status:'',error:'',countdown:0,progress:0,images:{},requests:[],displays:[],stage:'idle',diagnostic:'',check:'',online:true,reaction:null,autoReveal:true});
 const message = (e:unknown) => e instanceof Error ? e.message : 'Das hat leider nicht geklappt.';
 type Dependencies = {session:(options:LobbyOptions)=>LobbySession|Promise<LobbySession>; process:typeof processImage; receive:typeof receivePhoto; sound:(s:Sound)=>void};
 
@@ -37,6 +37,7 @@ export class GameController {
   private distributing = new Map<string,Promise<boolean>>();
   private delivered = new Map<string,Set<string>>();
   private reactionTimes = new Map<string,number>();
+  private revealTimer:ReturnType<typeof setTimeout>|undefined;
   private reactionTimer:ReturnType<typeof setTimeout>|undefined;
   private deps:Dependencies;
   constructor(deps:Partial<Dependencies>={}) { this.deps={session:createLobbySession,process:processImage,receive:receivePhoto,sound:play,...deps}; }
@@ -47,7 +48,7 @@ export class GameController {
   clearError = () => this.patch({error:''});
   fail = (e:unknown) => {this.patch({error:message(e),status:'',busy:false});this.deps.sound('error');};
   private checkName(name:string) { if(!name.trim()) throw new Error('Bitte zuerst einen Namen eingeben.'); return name.trim().slice(0,30); }
-  private clearPhotos() {this.round.abort(); this.round=new AbortController(); this.photos.clear();this.session?.clearTransfers?.();this.receiving.clear();this.distributing.clear();this.delivered.clear();this.reactionTimes.clear();clearTimeout(this.reactionTimer);this.patch({images:{},progress:0,reaction:null});}
+  private clearPhotos() {clearTimeout(this.revealTimer);this.round.abort(); this.round=new AbortController(); this.photos.clear();this.session?.clearTransfers?.();this.receiving.clear();this.distributing.clear();this.delivered.clear();this.reactionTimes.clear();clearTimeout(this.reactionTimer);this.patch({images:{},progress:0,reaction:null});}
   private put(id:string,blob:Blob) {this.photos.put(id,blob);this.patch({images:this.photos.urls()});}
   leave = () => {
     this.epoch++; this.lifetime.abort();this.lifetime=new AbortController();
@@ -250,7 +251,21 @@ export class GameController {
   };
   private showReveal() {
     const game=this.state.game;if(!game||game.phase!=='submit')return;
-    this.publish(reveal(game));this.deps.sound('drumroll');this.patch({status:''});
+    this.publish(reveal(game));this.deps.sound('drumroll');this.patch({status:''});this.scheduleReveal(4500);
+  }
+  setAutoReveal = (enabled:boolean) => {
+    this.patch({autoReveal:enabled});clearTimeout(this.revealTimer);
+    if(enabled)this.scheduleReveal();
+  };
+  private scheduleReveal(delay=6500) {
+    clearTimeout(this.revealTimer);
+    if(this.state.role!=='HOST'||!this.state.autoReveal||this.state.game?.phase!=='reveal')return;
+    const epoch=this.epoch;
+    this.revealTimer=setTimeout(()=>{
+      if(epoch!==this.epoch)return;
+      if(this.state.busy||!this.state.online||this.state.game?.players.some(p=>!p.connected)||this.state.displays.some(d=>!d.connected)){this.scheduleReveal(1000);return;}
+      void this.advanceReveal();
+    },delay);
   }
   private distribute(id:string):Promise<boolean> {
     const pending=this.distributing.get(id);if(pending)return pending;
@@ -268,24 +283,25 @@ export class GameController {
         sent.add(p.id);
       }
       return true;
-    } catch {if(epoch===this.epoch&&!signal.aborted)this.patch({status:'Ein Foto fehlt noch auf einem Gerät. Weiter versucht die Übertragung erneut.'});return false;}
+    } catch {if(epoch===this.epoch&&!signal.aborted)this.patch({status:'Ein Foto fehlt noch auf einem Gerät. Die Show pausiert. Mit Weiter erneut versuchen.'});return false;}
     })();
     this.distributing.set(id,task);
     void task.finally(()=>{if(this.distributing.get(id)===task)this.distributing.delete(id);});return task;
   }
   advanceReveal = async() => {
     const game=this.state.game,epoch=this.epoch,signal=this.round.signal;
-    if(this.state.role!=='HOST'||!game||game.phase!=='reveal'||this.state.busy)return;
+    if(this.state.role!=='HOST'||!game||game.phase!=='reveal'||this.state.busy||!this.state.online||game.players.some(p=>!p.connected))return;
+    clearTimeout(this.revealTimer);
     this.patch({busy:true,error:'',status:''});
     const deliver=async()=>{const players=game.mode==='REMOTE'?this.state.game!.players.filter(p=>p.id!=='host'&&p.connected).map(p=>p.id):[];const displays=[...this.displays].filter(([,d])=>d.connected).map(([id])=>id);return (await Promise.all([...players,...displays].map(id=>this.distribute(id)))).every(Boolean);};
     try {
-      if(!await deliver())return;
+      if(!await deliver()){this.setAutoReveal(false);return;}
       if(epoch!==this.epoch||signal.aborted||this.state.game?.phase!=='reveal')return;
       const next=nextReveal(this.state.game);this.publish(next);
       this.deps.sound(next.phase==='vote'?'voting':'camera');
-      if(next.phase==='reveal')await deliver();
+      if(next.phase==='reveal'&&!await deliver())this.setAutoReveal(false);
     }catch(e){if(epoch===this.epoch&&!signal.aborted)this.fail(e);}
-    finally{if(epoch===this.epoch&&!signal.aborted)this.patch({busy:false});}
+    finally{if(epoch===this.epoch&&!signal.aborted){this.patch({busy:false});this.scheduleReveal();}}
   };
   private showReaction(emoji:Reaction) {
     clearTimeout(this.reactionTimer);this.patch({reaction:{id:crypto.randomUUID(),emoji}});this.deps.sound('reaction');

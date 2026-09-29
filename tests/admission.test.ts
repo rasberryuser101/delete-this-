@@ -8,10 +8,11 @@ it('verlangt Freigabe, begrenzt die Warteschlange und räumt Timer auf',async()=
   gate.decide('id0',true);expect(await pending[0]).toBeUndefined();
   gate.clear();await Promise.all(pending);expect(vi.getTimerCount()).toBe(0);expect(changes).toHaveBeenLastCalledWith([]);
 });
-it('lehnt nach einer Minute ab und lässt denselben abgelehnten Peer nicht erneut anfragen',async()=>{
+it('lässt dasselbe Gerät nach Ablauf und Ablehnung erneut anfragen',async()=>{
   vi.useFakeTimers();const gate=new AdmissionGate(()=>{});const pending=gate.request('id','Gast').catch(e=>e);
   await vi.advanceTimersByTimeAsync(APPROVAL_MS);expect(await pending).toBeInstanceOf(Error);
-  await expect(gate.request('id','Anderer Name')).rejects.toThrow();gate.clear();
+  const retry=gate.request('id','Gast').catch(e=>e);gate.decide('id',false);expect(await retry).toBeInstanceOf(Error);
+  const accepted=gate.request('id','Gast');gate.decide('id',true);await expect(accepted).resolves.toBeUndefined();gate.clear();
 });
 it('limitiert auch schnell wechselnde Peer-IDs auf zwölf Anfragen pro Minute',async()=>{
   const gate=new AdmissionGate(()=>{});

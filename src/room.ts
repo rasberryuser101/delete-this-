@@ -6,7 +6,7 @@ import { withDeadline, type PhotoAction, type PhotoMetadata } from './transfer';
 import type { RequestAction } from './actions';
 export { parsePhotoMetadata } from './transfer';
 
-export const BUILD = '6.1 · Cloudflare';
+export const BUILD = '6.2';
 export const CONNECTION_ERROR = 'Lobby nicht gefunden oder Verbindung fehlgeschlagen. Link prüfen und erneut versuchen.';
 export const NETWORK_ERROR = 'Verbindung fehlgeschlagen. Internet prüfen und erneut versuchen.';
 export const JOIN_TIMEOUT_MS = 90_000;
@@ -45,13 +45,13 @@ export function parseHandshake(value: unknown): LobbyHandshake | null {
   const v = value as LobbyHandshake;
   return v.version === 5 && ['HOST', 'PLAYER', 'DISPLAY'].includes(v.role) && (v.role === 'HOST' || (typeof v.name === 'string' && v.name.trim().length > 0 && v.name.length <= 30)) ? v : null;
 }
-type Signal = { type: 'OFFER' | 'ANSWER'; sdp: string } | { type: 'ICE'; candidate: RTCIceCandidateInit } | { type: 'RESTART' | 'CHANNEL_READY' };
+type Signal = { type: 'OFFER' | 'ANSWER'; sdp: string; signature:string } | { type: 'ICE'; candidate: RTCIceCandidateInit } | { type: 'RESTART' | 'CHANNEL_READY' };
 type Incoming = { type: 'welcome'; id: string; hostToken?: string } | { type: 'peer-joined' | 'peer-left'; id: string } | { type: 'route'; from: string; data: unknown } | { type: 'turn'; iceServers: RTCIceServer[] } | { type: 'error'; message: string };
 type Binding = { id: string; key: string; role: Role; remoteId: string; online: boolean };
 const signalData = (raw: unknown): Signal | null => {
   if (!raw || typeof raw !== 'object') return null;
   const v = raw as Record<string, unknown>;
-  if ((v.type === 'OFFER' || v.type === 'ANSWER') && typeof v.sdp === 'string' && v.sdp.length < 20000) return { type: v.type, sdp: v.sdp };
+  if ((v.type === 'OFFER' || v.type === 'ANSWER') && typeof v.sdp === 'string' && v.sdp.length < 20000 && typeof v.signature === 'string' && /^[\da-f]{128}$/.test(v.signature)) return { type: v.type, sdp: v.sdp, signature:v.signature };
   if (v.type === 'RESTART' || v.type === 'CHANNEL_READY') return { type: v.type };
   if (v.type === 'ICE' && v.candidate && typeof v.candidate === 'object') {
     const c = v.candidate as RTCIceCandidateInit;
@@ -125,7 +125,7 @@ export class CloudflareLobby {
       room: { onPeerJoin: null, onPeerLeave: null, leave: () => this.close(), getPeers: () => Object.fromEntries([...this.bindings].map(([id]) => [id, { close: () => this.revoke(id) }])) },
       relayCount: () => this.ws?.readyState === WebSocket.OPEN ? 1 : 0,
       diagnostics: async () => `Cloudflare · Lobby: ${this.ws?.readyState === WebSocket.OPEN ? 'verbunden' : 'getrennt'} · TURN: ${this.turnStatus} · Fotoverbindungen: ${[...this.transports.values()].filter(t => t.channel.readyState === 'open').length}\n${[...this.pcs.values()].map(pc => `WebRTC: ${pc.connectionState} · ICE: ${pc.iceConnectionState}`).join('\n')}`,
-      connectionError: () => this.turnStatus === 'Zugang erhalten' ? 'Fotoverbindung fehlgeschlagen. Beide Geräte geöffnet lassen und erneut versuchen.' : 'Fotoverbindung fehlgeschlagen: Cloudflare-TURN ist nicht verfügbar. Der Host muss TURN_KEY_ID und TURN_KEY_TOKEN im aktiven Worker prüfen.',
+      connectionError: () => this.turnStatus === 'Zugang erhalten' ? 'Fotoverbindung fehlgeschlagen. Beide Geräte geöffnet lassen und erneut versuchen.' : 'Die Fotoverbindung ist momentan nicht verfügbar. Bitte später erneut versuchen oder den Betreiber informieren.',
       recover: () => this.recover(), clearTransfers: () => { for (const t of this.transports.values()) t.clear(); } };
   }
   private proof(id: string, role: Role, remoteId: string) { return `game-${normalizeRoomCode(this.options.code)}|${id}|${role}|${remoteId}`; }
@@ -151,6 +151,7 @@ export class CloudflareLobby {
       ws.onmessage = event => {
         if (this.ws !== ws || this.closed || typeof event.data !== 'string' || event.data.length > 32_768) return;
         let msg: Incoming; try { msg = JSON.parse(event.data) as Incoming; } catch { return; }
+        if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
         if (msg.type === 'welcome' && typeof msg.id === 'string') {
           welcomed = true; clearTimeout(timer); this.selfRemote = msg.id;
           if (msg.hostToken) this.hostToken = msg.hostToken;
@@ -163,7 +164,7 @@ export class CloudflareLobby {
           if (validIce(msg.iceServers)) {
             this.ice = msg.iceServers;
             this.turnStatus = this.ice.some(s => /turns?:/.test(String(s.urls))) ? 'Zugang erhalten' : 'kein Relay-Zugang';
-            for (const pc of this.pcs.values()) if (pc.connectionState !== 'closed') try { pc.setConfiguration({ iceServers: this.ice }); } catch { this.options.onStatus?.('TURN-Konfiguration konnte nicht aktualisiert werden.'); }
+            for (const pc of this.pcs.values()) if (pc.connectionState !== 'closed') try { pc.setConfiguration({ iceServers: this.ice }); } catch { this.options.onStatus?.('Verbindung konnte nicht aktualisiert werden.'); }
           }
           this.turnResolve?.(); this.turnResolve = null;
         }
@@ -229,6 +230,7 @@ export class CloudflareLobby {
     }
     const signal = signalData(data);
     if (!signal) return;
+    if ((signal.type==='OFFER'||signal.type==='ANSWER') && !await verifyIdentity(binding.key,signal.signature,this.signalProof(signal.type,signal.sdp,remote,this.selfRemote))) return;
     if (signal.type === 'CHANNEL_READY') { this.remoteReady.add(remote); this.confirmPeer(remote); return; }
     if (signal.type === 'RESTART' && this.options.role === 'HOST') { await this.restart(remote); return; }
     if (signal.type === 'OFFER' && this.options.role !== 'HOST') {
@@ -238,7 +240,7 @@ export class CloudflareLobby {
       await pc.setRemoteDescription({ type: 'offer', sdp: signal.sdp });
       await this.flushCandidates(remote, pc);
       await pc.setLocalDescription(await pc.createAnswer());
-      this.route(remote, { type: 'ANSWER', sdp: pc.localDescription!.sdp! });
+      await this.sendDescription(remote,'ANSWER',pc);
     } else if (signal.type === 'ANSWER' && this.options.role === 'HOST') {
       const pc = this.pcs.get(remote); if (pc?.signalingState === 'have-local-offer') { await pc.setRemoteDescription({ type: 'answer', sdp: signal.sdp }); await this.flushCandidates(remote, pc); }
     } else if (signal.type === 'ICE') {
@@ -247,10 +249,18 @@ export class CloudflareLobby {
       try { await pc.addIceCandidate(signal.candidate); } catch { /* stale candidate after an ICE restart */ }
     }
   }
+  private signalProof(type:'OFFER'|'ANSWER',sdp:string,from:string,to:string) {
+    return JSON.stringify(['delete-this-sdp-v1',this.options.code,from,to,type,sdp]);
+  }
+  private async sendDescription(remote:string,type:'OFFER'|'ANSWER',pc:RTCPeerConnection) {
+    const sdp=pc.localDescription!.sdp!,from=this.selfRemote;
+    const signature=await this.identity.sign(this.signalProof(type,sdp,from,remote));
+    if(!this.closed&&this.selfRemote===from&&this.pcs.get(remote)===pc)this.route(remote,{type,sdp,signature});
+  }
   private newPeer(remote: string) {
     this.dropPeer(remote);
     const pc = new RTCPeerConnection({ iceServers: this.ice }); this.pcs.set(remote, pc); this.peerStarted.set(remote, Date.now());
-    this.options.onStatus?.(this.turnStatus === 'Zugang erhalten' ? 'Freigegeben. Verschlüsselte Fotoverbindung wird aufgebaut …' : 'Freigegeben. TURN fehlt; direkte Fotoverbindung wird versucht …');
+    this.options.onStatus?.('Freigegeben! Verbinde eure Geräte …');
     pc.onicecandidate = e => { if (e.candidate) try { this.route(remote, { type: 'ICE', candidate: e.candidate.toJSON() }); } catch { /* reconnect will retry */ } };
     pc.ondatachannel = e => this.bindChannel(remote, e.channel);
     pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') void this.checkHealth(); };
@@ -267,7 +277,7 @@ export class CloudflareLobby {
     const pc = this.newPeer(remote);
     this.bindChannel(remote, pc.createDataChannel('photo-transfer', { ordered: true }));
     await pc.setLocalDescription(await pc.createOffer());
-    this.route(remote, { type: 'OFFER', sdp: pc.localDescription!.sdp! });
+    await this.sendDescription(remote,'OFFER',pc);
   }
   private bindChannel(remote: string, channel: RTCDataChannel) {
     const id = this.remoteIds.get(remote), binding = id && this.bindings.get(id);
@@ -314,12 +324,12 @@ export class CloudflareLobby {
     this.lastTurnRequest = Date.now();
     this.ws.send(JSON.stringify({ type: 'turn' }));
     clearTimeout(this.turnTimer);
-    this.turnTimer = setTimeout(() => { this.turnStatus = 'keine Antwort'; this.turnResolve?.(); this.turnResolve = null; this.options.onStatus?.('TURN antwortet nicht. Direkte Verbindung wird versucht …'); }, 12_000);
+    this.turnTimer = setTimeout(() => { this.turnStatus = 'keine Antwort'; this.turnResolve?.(); this.turnResolve = null; this.options.onStatus?.('Verbindung dauert länger. Ein anderer Weg wird versucht …'); }, 12_000);
   }
   private async checkHealth() {
     if (this.closed || navigator.onLine === false) return;
     if (this.ws?.readyState !== WebSocket.OPEN) { await this.recover(); return; }
-    if (this.lastTurnRequest && Date.now() - this.lastTurnRequest > 90 * 60_000) this.requestTurn();
+    if (this.lastTurnRequest && Date.now() - this.lastTurnRequest > 20 * 60_000) this.requestTurn();
     for (const [remote, b] of this.bindings) {
       const pc = this.pcs.get(b.remoteId), dc = this.transports.get(b.remoteId)?.channel;
       if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed' || dc?.readyState === 'closed') await this.restart(b.remoteId);

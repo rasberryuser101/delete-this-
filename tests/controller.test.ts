@@ -188,3 +188,22 @@ it('wiederholt einen fehlgeschlagenen ersten Spielstand-Abruf und beendet die La
  expect(request.mock.calls.filter(([data])=>data==='{"type":"ready"}')).toHaveLength(2);
  expect(guest.snapshot()).toMatchObject({busy:false,online:true,stage:'connected',status:'',game:{phase:'lobby'}});
 });
+it('führt die Show automatisch vor, pausiert bei Übertragungsfehlern und räumt Timer auf',async()=>{
+ const {host,guest,net}=await pair('REMOTE');host.begin(['normal']);await vi.advanceTimersByTimeAsync(3000);
+ await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));
+ expect(host.snapshot().game?.revealIndex).toBe(-1);
+ net.blockHostPhotos(true);await vi.advanceTimersByTimeAsync(4500);
+ expect(host.snapshot().game?.revealIndex).toBe(0);expect(host.snapshot().autoReveal).toBe(false);
+ await vi.advanceTimersByTimeAsync(15000);expect(host.snapshot().game?.revealIndex).toBe(0);
+ net.blockHostPhotos(false);host.setAutoReveal(true);await vi.advanceTimersByTimeAsync(6500);
+ expect(host.snapshot().game?.revealIndex).toBe(1);expect(Object.keys(guest.snapshot().images)).toHaveLength(2);
+ host.setAutoReveal(false);await vi.advanceTimersByTimeAsync(10000);expect(host.snapshot().game?.phase).toBe('reveal');
+ host.setAutoReveal(true);await vi.advanceTimersByTimeAsync(6500);expect(guest.snapshot().game?.phase).toBe('vote');
+ host.leave();guest.leave();expect(vi.getTimerCount()).toBe(0);
+});
+it('wartet bei automatischer Show auf getrennte Spieler',async()=>{
+ const {host,guest,net}=await pair('REMOTE');host.begin(['normal']);await vi.advanceTimersByTimeAsync(3000);
+ await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));
+ net.disconnect('device-0','device-1');await vi.advanceTimersByTimeAsync(15000);expect(host.snapshot().game?.revealIndex).toBe(-1);
+ net.reconnect('device-0','device-1');await vi.advanceTimersByTimeAsync(1000);expect(host.snapshot().game?.revealIndex).toBe(0);
+});

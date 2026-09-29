@@ -8,6 +8,6 @@ export function NetworkInfo() { return <section className="network-explainer">
     <tr><td>Spielgeräte</td><td>Verkleinern und zeigen Fotos.</td><td>Der Host bekommt Einreichungen. Im Remote-Modus sehen freigegebene Gäste die enthüllten Fotos; im Party-Modus freigegebene Displays.</td></tr>
   </tbody></table></div>
   <p>Fotos werden lokal neu encodiert und ausschließlich über WebRTC-Datenkanäle übertragen. Es gibt keine Foto-Datenbank und keine Foto-Uploads an den Webhost. Bei einer TURN-Verbindung laufen verschlüsselte Bildpakete technisch über Cloudflare, ohne dort als Bilder abgelegt zu werden.</p>
-  <p>Für die Lobby verwaltet ein Cloudflare Durable Object Verbindungen und eine zeitlich begrenzte Prüfsumme für den Host. Weitere kurze Zähler begrenzen Verbindungsversuche. Dort werden keine Fotos gespeichert. Spielerkennung, Anzeigename und Toneinstellungen können lokal im Browser stehen; Bilddaten nicht.</p>
+  <p>Für die Lobby verwaltet ein Cloudflare Durable Object Verbindungen und eine zeitlich begrenzte Prüfsumme für den Host. Weitere kurze Zähler begrenzen Verbindungsversuche. Dort werden keine Fotos gespeichert. Spielerkennung und Anzeigename stehen lokal im Browser; Bilddaten nicht.</p>
   <p>Der Host muss Beitritte ausdrücklich erlauben. Einladungslinks prüfen seinen öffentlichen Schlüssel; der Code allein erlaubt nur eine Beitrittsanfrage. Freigegebene Personen können Screenshots machen. Der Host-Tab muss offen bleiben; nach einem Neuladen ist eine neue Freigabe nötig.</p>
 </section>; }

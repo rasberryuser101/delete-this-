@@ -1,5 +1,7 @@
 # Delete This! 📸
 
+**Version 6.2:** automatische pausierbare Foto-Show, kompakte Pack-Auswahl, Musik zunächst aus, Ablehnung ohne dauerhafte Gerätesperre, verstärkte Freigabe- und Relay-Limits. [Einfache Anleitung zu Verbrauch, Dashboard, Sicherheitsgrenzen und Betreiberpflichten](docs/BETRIEB.md).
+
 Ein deutsches Foto-Partyspiel für 2–10 Personen. Die App besteht aus React/TypeScript, einem kleinen Cloudflare Worker für die Lobby und kurzlebige TURN-Zugänge sowie Cloudflare Static Assets für die Website. **Fotos werden ausschließlich auf den Geräten verarbeitet und über WebRTC-DataChannels ausgetauscht.** Cloudflare sieht kleine Lobby- und Spielnachrichten; bei blockierten Direktverbindungen leitet Cloudflare TURN die *verschlüsselten* WebRTC-Pakete weiter. Es gibt keine Foto-Uploads, KI, Analytics oder Foto-Datenbank.
 
 ## So läuft eine Verbindung ab (ganz einfach)
@@ -24,7 +26,7 @@ Cloudflare bekommt IP-Adressen und Verbindungs-/Spielmetadaten. Der Worker speic
    - `TURN_KEY_TOKEN` = dein TURN Key API Token
 4. Speichern und die neue Worker-Version deployen, falls Cloudflare dazu auffordert. `https://<deine-worker-url>/api/status` muss danach `{"turn":true}` zeigen. Das verrät **keinen** Schlüssel, nur ob beide Einträge existieren.
 
-Der Worker fragt Cloudflare bei Bedarf nach zwei Stunden gültigen TURN-Zugangsdaten und gibt diese nur an freigegebene Geräte. Ohne diese beiden Secrets nutzt das Spiel nur den kostenlosen Cloudflare-STUN-Server; besonders iPhone-zu-PC über Mobilfunk kann dann scheitern. Ein eingetragenes Secret allein ist noch kein Beweis für eine funktionierende TURN-Verbindung: den Live-Test unten durchführen.
+Der Worker fragt Cloudflare bei Bedarf nach 30 Minuten gültigen TURN-Zugangsdaten und gibt diese nur an freigegebene Geräte. Ohne diese beiden Secrets nutzt das Spiel nur den kostenlosen Cloudflare-STUN-Server; besonders iPhone-zu-PC über Mobilfunk kann dann scheitern. Ein eingetragenes Secret allein ist noch kein Beweis für eine funktionierende TURN-Verbindung: den Live-Test unten durchführen.
 
 ## GitHub → Cloudflare Workers deployen
 
@@ -62,7 +64,7 @@ Jede Datei `src/packs/*.json` wird beim Build **automatisch** zur Pack-Auswahl h
 
 Die Gastgeberfreigabe und der verschlüsselte Fotokanal sind zwei Schritte. `/api/status` muss nach dem Eintragen der Secrets `{"turn":true}` zeigen. Bei `false` fehlt mindestens ein Secret im **aktiven Worker** (Build-Variablen allein reichen nicht). Prüfe `TURN_KEY_ID` und `TURN_KEY_TOKEN` unter Settings → Variables & Secrets. Danach die Version deployen und beide Geräte neu laden.
 
-Die App wartet auf eine Bereitschaftsbestätigung beider Fotokanäle, bevor sie den Gast in die Lobby übernimmt. Ein fehlgeschlagener erster Spielstand-Abruf wird bis zu zweimal wiederholt. Das ausklappbare Feld „Verbindungsdiagnose“ zeigt nur technische Zustände (keine IP-Adressen, Zugangsdaten oder Fotos). „TURN: Zugang erhalten“ bestätigt erhaltene Zugangsdaten, nicht die tatsächliche Nutzung des Relay-Pfads.
+Die App wartet auf eine Bereitschaftsbestätigung beider Fotokanäle, bevor sie den Gast in die Lobby übernimmt. Ein fehlgeschlagener erster Spielstand-Abruf wird bis zu zweimal wiederholt. Nur mit `?debug=1` vor dem Hash erscheint das ausklappbare Feld „Verbindungsdiagnose“. Es zeigt nur technische Zustände (keine IP-Adressen, Zugangsdaten oder Fotos). „TURN: Zugang erhalten“ bestätigt erhaltene Zugangsdaten, nicht die tatsächliche Nutzung des Relay-Pfads.
 
 ## Lokal entwickeln und testen
 
