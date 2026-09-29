@@ -7,7 +7,7 @@ check(typeof c.tagline==='string'&&c.tagline.length<=120,'tagline: höchstens 12
 for(const k of ['accent','ink'])check(/^#[0-9a-f]{6}$/i.test(c.theme?.[k]),`${k}: Farbe wie #f22882.`);
 for(const k of ['introMs','photoMs'])check(Number.isInteger(c.show?.[k])&&c.show[k]>=1500&&c.show[k]<=20000,`${k}: 1500–20000 Millisekunden.`);
 for(const k of ['musicVolume','effectsVolume'])check(Number.isFinite(c.audio?.[k])&&c.audio[k]>=0&&c.audio[k]<=1,`${k}: Lautstärke von 0 bis 1.`);
-const music=['lobby','submit','reveal','vote','result','finale'];
+const music=['lobby','submit','finale'];
 const effects=['button','connected','prompt','countdown','submit','reveal','vote','winner','gameover','error','drumroll','camera','voting','reaction'];
 const safe=(path,ext)=>typeof path==='string'&&/^media\/[a-zA-Z0-9_./-]+$/.test(path)&&!path.includes('..')&&ext.test(path);
 for(const [keys,group,max] of [[music,c.audio?.music,8_000_000],[effects,c.audio?.effects,1_000_000]])for(const key of keys){

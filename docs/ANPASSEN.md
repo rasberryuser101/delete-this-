@@ -31,10 +31,9 @@ Direktlink: https://github.com/rasberryuser101/delete-this-/tree/cloudflare-migr
 | --- | --- |
 | `lobby.mp3` | Lobby und Warten auf Freigabe |
 | `submit.mp3` | Fotos auswählen |
-| `reveal.mp3` | Vorhang und Foto-Show |
-| `vote.mp3` | Abstimmung |
-| `result.mp3` | Zwischenstand nach einer Runde |
 | `finale.mp3` | Gesamtrangliste nach der letzten Runde |
+
+Es gibt nur diese drei Musikphasen. Präsentation, Voting und Rundenergebnis verwenden ausschließlich Soundeffekte; dort läuft auch keine Ersatzmelodie. Eventuell vorhandene Musikdateien `reveal.mp3`, `vote.mp3` und `result.mp3` werden nicht mehr abgespielt. Die gleichnamigen kurzen Soundeffekte unter `public/media/sfx/` bleiben davon unabhängig.
 
 1. Benenne die gewünschte MP3 auf deinem Computer entsprechend um, z. B. `lobby.mp3`.
 2. Öffne den **music-Ordner** über den Link oben.
@@ -42,7 +41,7 @@ Direktlink: https://github.com/rasberryuser101/delete-this-/tree/cloudflare-migr
 4. Nachricht wie „Neue Lobby-Musik“, direkt auf `cloudflare-migration` speichern.
 5. Nach erfolgreichem Build die Website neu laden und Musik einschalten.
 
-Die Datei wird beim Build erkannt. Du musst dafür keinen Programmcode ändern. Noch keine Dateien? Dann verwendet jede Phase eigene lokale Synthesizer-Ersatzmusik. Die bisherige ruhige Dauermelodie wurde ersetzt. Musik bleibt zunächst aus, damit sie nicht ungefragt auf jedem Handy läuft.
+Die Datei wird beim Build erkannt. Du musst dafür keinen Programmcode ändern. Noch keine Dateien? Dann verwenden Lobby, Fotoauswahl und Finale lokale Synthesizer-Ersatzmusik. Musik bleibt zunächst aus, damit sie nicht ungefragt auf jedem Handy läuft. Bei einer Party reicht es, sie auf dem Host oder einem Display einzuschalten; auf den Gästehandys kann sie ausgeschaltet bleiben.
 
 Empfehlung: ein sauber geschnittener Loop mit 15–60 Sekunden, MP3 mit 128–192 kbit/s. Grenze: 8 MB und 120 Sekunden pro Musikdatei. Ein langer Titel wird nicht durch bloßes Umbenennen kürzer. Die App wiederholt die Datei; für einen nahtlosen Übergang muss ihr Anfang zum Ende passen. Lautstärke vor dem Hochladen normalisieren.
 

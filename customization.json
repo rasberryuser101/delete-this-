@@ -15,9 +15,6 @@
     "music": {
       "lobby": "media/music/lobby.mp3",
       "submit": "media/music/submit.mp3",
-      "reveal": "media/music/reveal.mp3",
-      "vote": "media/music/vote.mp3",
-      "result": "media/music/result.mp3",
       "finale": "media/music/finale.mp3"
     },
     "effects": {

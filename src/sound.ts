@@ -8,12 +8,9 @@ const musicNodes=new Set<AudioScheduledSourceNode>();
 const effects=new Map<string,AudioBuffer>();
 const loading=new Set<string>();
 const unavailable=new Set<string>();
-const profiles:Record<MusicScene,{bpm:number;notes:number[];bass:number[]}>={
+const profiles:Record<NonNullable<MusicScene>,{bpm:number;notes:number[];bass:number[]}>={
  lobby:{bpm:108,notes:[0,659,0,784,880,0,784,659,0,587,0,659,784,0,523,0],bass:[131,165,175,147]},
  submit:{bpm:116,notes:[523,0,0,659,0,587,0,0,440,0,0,523,0,392,0,0],bass:[131,110,147,98]},
- reveal:{bpm:84,notes:[147,0,0,156,0,0,147,0,0,0,220,0,0,208,0,0],bass:[73,73,78,69]},
- vote:{bpm:126,notes:[587,0,740,0,880,0,740,659,587,0,659,0,740,0,880,0],bass:[147,147,165,131]},
- result:{bpm:112,notes:[523,659,784,0,1046,0,784,0,880,784,659,0,587,0,523,0],bass:[131,175,147,196]},
  finale:{bpm:120,notes:[523,0,659,784,0,1046,0,988,880,0,784,659,587,659,784,0],bass:[131,165,175,196]}
 };
 function audio(){
@@ -51,21 +48,20 @@ function stopBackground(){
  musicNodes.clear();const old=musicBus;musicBus=null;if(old)setTimeout(()=>old.disconnect(),80);
 }
 function schedule(){
- if(!active||muted||!musicEnabled||!context||!musicBus)return;
+ if(!active||muted||!musicEnabled||!context||!musicBus||scene===null)return;
  const profile=profiles[scene];nextBeat=Math.max(nextBeat,context.currentTime);
  while(nextBeat<context.currentTime+.15){
   const slot=beat%16,bar=Math.floor(beat/16),pitch=profile.notes[slot];
-  if(pitch)note(pitch*(bar%4===3?1.122:1),nextBeat,scene==='reveal'?.28:.13,.045,scene==='reveal'?'sine':'triangle',true);
+  if(pitch)note(pitch*(bar%4===3?1.122:1),nextBeat,.13,.045,'triangle',true);
   if(slot%4===0){note(profile.bass[Math.floor(slot/4)],nextBeat,.23,.075,'sine',true);percussion(nextBeat,'kick',true,.65);}
-  if(scene!=='reveal'&&slot%4===2)percussion(nextBeat,'snare',true,.35);
-  if(scene==='vote'&&slot%2===1)percussion(nextBeat,'hat',true,.45);
+  if(slot%4===2)percussion(nextBeat,'snare',true,.35);
   beat++;nextBeat+=60/profile.bpm/2;
  }
  timer=setTimeout(schedule,70);
 }
 function refresh(){
  const token=++generation;stopBackground();
- if(!active||muted||!musicEnabled)return;
+ if(!active||muted||!musicEnabled||scene===null)return;
  try{
   const ctx=audio();musicBus=ctx.createGain();musicBus.gain.value=CUSTOM.audio.musicVolume;musicBus.connect(master!);beat=0;nextBeat=ctx.currentTime+.05;schedule();
   const url=mediaUrl(CUSTOM.audio.music[scene]);if(!url||unavailable.has(url))return;

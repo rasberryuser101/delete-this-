@@ -9,10 +9,10 @@ it.each([3,5,10] as RoundLimit[])('beendet nach genau %i Runden, verteilt Punkte
  expect(musicScene(game)).toBe('lobby');
  for(let i=0;i<limit;i++){
   game=nextRound(game,['normal'],[],()=>0);expect(musicScene(game)).toBe('submit');expect(()=>setRoundLimit(game,3)).toThrow();
-  game=reveal(submitPhoto(submitPhoto(game,'host','a'),'guest','b'),()=>.99);expect(musicScene(game)).toBe('reveal');
-  while(game.phase==='reveal')game=nextReveal(game);expect(musicScene(game)).toBe('vote');
+  game=reveal(submitPhoto(submitPhoto(game,'host','a'),'guest','b'),()=>.99);expect(musicScene(game)).toBeNull();
+  while(game.phase==='reveal')game=nextReveal(game);expect(musicScene(game)).toBeNull();
   game=castVote(castVote(game,'host','b',()=>0),'guest','a',()=>0);
-  expect(isMatchOver(game)).toBe(i===limit-1);expect(musicScene(game)).toBe(i===limit-1?'finale':'result');
+  expect(isMatchOver(game)).toBe(i===limit-1);expect(musicScene(game)).toBe(i===limit-1?'finale':null);
   expect(validateMessage({type:'sync',game:viewFor(game,'guest'),you:'guest'})).not.toBeNull();
   expect(validateMessage({type:'display-sync',state:displayView({...game,mode:'PARTY'})})).not.toBeNull();
  }
@@ -26,6 +26,6 @@ it('zeigt geteilte Gesamtsiege ohne zufälligen Gesamtsieger',()=>{
 });
 it('verwirft manipulierte Rundenzahlen und unsichere Medienpfade',()=>{
  const game=createGame('Host','PARTY');for(const limit of [0,4,999,'3'])expect(validateMessage({type:'sync',you:'host',game:{...game,roundLimit:limit}})).toBeNull();
- expect(mediaUrl('https://example.org/music.mp3')).toBeUndefined();expect(mediaUrl('media/../private.mp3')).toBeUndefined();expect(mediaUrl('media/music/lobby.mp3')).toBeUndefined();
+ expect(mediaUrl('https://example.org/music.mp3')).toBeUndefined();expect(mediaUrl('media/../private.mp3')).toBeUndefined();expect(mediaUrl('media/music/not-installed-test-file.mp3')).toBeUndefined();
  expect(mediaUrl(avatarPath('Anna'))).toBeTruthy();expect(avatarPath('Anna')).toBe(avatarPath('Anna'));
 });
