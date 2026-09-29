@@ -6,7 +6,7 @@ import { withDeadline, type PhotoAction, type PhotoMetadata } from './transfer';
 import type { RequestAction } from './actions';
 export { parsePhotoMetadata } from './transfer';
 
-export const BUILD = '6.3.1';
+export const BUILD = '7.0.1';
 export const CONNECTION_ERROR = 'Lobby nicht gefunden oder Verbindung fehlgeschlagen. Link prüfen und erneut versuchen.';
 export const NETWORK_ERROR = 'Verbindung fehlgeschlagen. Internet prüfen und erneut versuchen.';
 export const HOST_CONNECTION_ERROR = 'Die Lobby konnte nicht geöffnet werden. Internet-/VPN-/Inhaltsblocker-Einstellungen prüfen und erneut versuchen.';
@@ -284,7 +284,7 @@ export class CloudflareLobby {
     this.options.onStatus?.('Freigegeben! Verbinde eure Geräte …');
     pc.onicecandidate = e => { if (e.candidate) try { this.route(remote, { type: 'ICE', candidate: e.candidate.toJSON() }); } catch { /* reconnect will retry */ } };
     pc.ondatachannel = e => this.bindChannel(remote, e.channel);
-    pc.onconnectionstatechange = () => { if (pc.connectionState === 'failed') void this.checkHealth(); };
+    pc.onconnectionstatechange = () => { if (pc.connectionState === 'disconnected') this.setOffline(remote); if (pc.connectionState === 'failed') void this.checkHealth(); };
     return pc;
   }
   private async flushCandidates(remote: string, pc: RTCPeerConnection) {
@@ -330,7 +330,9 @@ export class CloudflareLobby {
   private left(remote: string) {
     this.dropPeer(remote);
     const id = this.remoteIds.get(remote); this.remoteIds.delete(remote); this.candidates.delete(remote);
-    if (id && this.bindings.get(id)?.remoteId === remote) this.bindings.delete(id);
+    // Keep the authenticated key across socket loss. The same open tab can
+    // return without another approval; a different key still needs approval.
+    if (id && this.bindings.get(id)?.remoteId === remote) this.bindings.get(id)!.online=false;
     if (remote === this.hostRemote) { this.hostRemote = ''; this.admitting.delete(remote); }
   }
   private revoke(id: string) { const b = this.bindings.get(id); if (!b) return; this.blocked.add(id); try { this.route(b.remoteId, { type: 'DENIED' }); } catch { /* disconnected */ } this.left(b.remoteId); }
@@ -353,7 +355,7 @@ export class CloudflareLobby {
     if (this.lastTurnRequest && Date.now() - this.lastTurnRequest > 20 * 60_000) this.requestTurn();
     for (const [remote, b] of this.bindings) {
       const pc = this.pcs.get(b.remoteId), dc = this.transports.get(b.remoteId)?.channel;
-      if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed' || dc?.readyState === 'closed') await this.restart(b.remoteId);
+      if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed' || pc?.connectionState === 'disconnected' || dc?.readyState === 'closed') await this.restart(b.remoteId);
       else if (!b.online && pc && Date.now() - (this.peerStarted.get(b.remoteId) ?? Date.now()) > 30_000) await this.restart(b.remoteId);
       if (this.options.role !== 'HOST' && remote === 'host' && !pc) await this.restart(b.remoteId);
     }

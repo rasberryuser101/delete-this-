@@ -119,3 +119,10 @@ it.each(['OFFER','ANSWER'])('verwirft manipulierte %s-Verbindungsangebote trotz 
  expect(joined).not.toHaveBeenCalled();
  expect([...connections.values()].some(pc=>pc.remoteDescription?.sdp==='changed-after-signing')).toBe(false);
 });
+it('verbindet denselben Tab nach Socket-Verlust ohne erneute Freigabe und erhält den Fotokanal',async()=>{
+ vi.stubGlobal('isSecureContext',true);vi.stubGlobal('location',{origin:'https://example.org'});vi.stubGlobal('window',{addEventListener(){},removeEventListener(){}});vi.stubGlobal('document',{addEventListener(){},removeEventListener(){}});vi.stubGlobal('WebSocket',FakeSocket);vi.stubGlobal('RTCPeerConnection',FakePC);
+ const authorize=vi.fn(async()=>{}),host=new CloudflareLobby({code:'ABCDEFGH23',role:'HOST',authorize,canPhoto:()=>true},await makeIdentity('host'));sessions.push(host);await host.start();const joined=vi.fn(),left=vi.fn();host.session.room.onPeerJoin=joined;host.session.room.onPeerLeave=left;
+ const guest=new CloudflareLobby({code:'ABCDEFGH23',role:'PLAYER',name:'Gast',expectedHostKey:host.session.publicKey,authorize:()=>{},canPhoto:()=>true},await makeIdentity('guest'));sessions.push(guest);await guest.start();await vi.waitFor(()=>expect(joined).toHaveBeenCalledTimes(1));expect(authorize).toHaveBeenCalledTimes(1);
+ [...webSockets.values()].find(ws=>ws.role==='GUEST')!.close();await vi.waitFor(()=>expect(left).toHaveBeenCalledWith('guest'));await guest.recover();await vi.waitFor(()=>expect(joined).toHaveBeenCalledTimes(2));expect(authorize).toHaveBeenCalledTimes(1);
+ host.session.control.onRequest=async()=>({ok:true});await expect(guest.session.control.request('{"type":"ready"}',{target:'host'})).resolves.toEqual({ok:true});
+});

@@ -3,8 +3,8 @@ import { DEFAULT_PACKS, PACKS, pickPrompt, validatePack } from '../src/prompts';
 import { createGame, joinPlayer, nextRound } from '../src/game';
 const custom = { id:'mein-pack', title:'Mein Pack', description:'Eigene Fragen', icon:'🛸', prompts:['Bitte dieses Bild sofort erklären.'] };
 it('lädt alle JSON-Dateien als Packs mit eigenen Icons und lässt 18+ zunächst aus', () => {
-  expect(Object.fromEntries(PACKS.map(pack => [pack.title, pack.prompts.length]))).toEqual({Classic:20,Roast:28,'After Dark':27,Challenges:20});
-  expect(PACKS.reduce((sum, pack) => sum + pack.prompts.length, 0)).toBe(95);
+  expect(Object.fromEntries(PACKS.map(pack => [pack.title, pack.prompts.length]))).toEqual({Classic:26,Roast:33,'After Dark':29,Challenges:20});
+  expect(PACKS.reduce((sum, pack) => sum + pack.prompts.length, 0)).toBe(108);
   expect(PACKS.filter(p=>p.adult).every(p=>!DEFAULT_PACKS.includes(p.id))).toBe(true);
 });
 it('akzeptiert eigene Packs ohne Kategorie und validiert Icon, Alter und Texte', () => {

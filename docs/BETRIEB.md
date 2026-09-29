@@ -43,7 +43,7 @@ Das sind Schätzungen, keine Messwerte. WebRTC-Verpackung, Bestätigungen, Wiede
 - Vor der Raumverwaltung: höchstens 30 Verbindungsversuche pro Minute/IP/Cloudflare-Standort. Diese schnelle Schranke ist näherungsweise, keine weltweite exakte Abrechnung.
 - Danach zentral pro pseudonymisierter IP-Kennung: 10 Hostversuche, 40 Gastversuche, 90 TURN-Anforderungen je Stundenfenster. Geteilte WLANs teilen diese Schranke; nicht dauernd neu laden.
 - Ab Version 6.3.1 zeigt eine erreichte Lobby-Schutzschranke die verbleibende Wartezeit statt „Lobby nicht gefunden“. Fehlversuche verlängern das feste Stundenfenster nicht. Abgelehnte Verbindungen erhalten nur eine Fehlermeldung und werden sofort geschlossen, ohne Lobbyzugang. „Erneut versuchen“ funktioniert auch nach fehlgeschlagener Host-Erstellung. Alte statische Hosting-Adressen ohne Lobby-Dienst werden gesondert erkannt.
-- Je Verbindung maximal 400 Host- bzw. 160 Gastnachrichten/Minute, höchstens 32 KiB Text. Auch fehlerhafte Nachrichten zählen. Binärnachrichten werden abgewiesen.
+- Je Verbindung maximal 1200 Host- bzw. 160 Gastnachrichten/Minute, höchstens 32 KiB Text. Auch fehlerhafte Nachrichten zählen. Binärnachrichten werden abgewiesen.
 - Relay-Zugänge nur für Hosts und freigegebene Gäste; Ausgabe höchstens einmal/Minute/Verbindung. Gültigkeit 30 Minuten, normale Erneuerung nach 20 Minuten.
 - Für diese gesamte Installation höchstens **500 Ausgabenversuche für Relay-Zugänge pro 24-Stunden-Fenster** ab dem ersten Versuch. Wert in `worker/limits.ts`. Das schützt auch gegen wechselnde IPs beim Erstellen neuer Zugänge, kann bei Missbrauch aber reguläre Gäste aussperren. Bestehende Verbindungen werden durch Erreichen der Schranke nicht sofort getrennt.
 - Fotos werden größenbegrenzt, für Rolle und Runde geprüft und nach bestätigtem Empfang nicht grundlos erneut übertragen. Keine regelmäßige Vollsynchronisation und kein permanenter Chat-Heartbeat.
@@ -85,4 +85,4 @@ Freigegebene Mitspieler können Bilder kopieren. Wer den Host, das Gerät, den G
 - https://www.oesterreich.gv.at/de/themen/onlinesicherheit_internet_und_neue_medien/internet_und_handy___sicher_durch_die_digitale_welt/Seite.1720902
 - https://www.cloudflare.com/cloudflare-customer-dpa/
 
-Eigene Medien, Showtempo und Gestaltung: [Anleitung](ANPASSEN.md). Seit Version 6.3: 3/5/10 Runden mit Gesamtwertung und Revanche.
+Eigene Medien, Showtempo und Gestaltung: [Anleitung](ANPASSEN.md). Version 7: 3/5/10 Runden, Stimmenpunkte, optionaler Bonus, Reverse und Mix. [Neue Spielregeln und Update-Anleitung](UPDATE-7.md).

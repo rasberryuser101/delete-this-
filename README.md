@@ -1,8 +1,8 @@
 # Delete That!
 
-**Version 6.3:** 3/5/10 Runden, Gesamtrangliste und Revanche, Musik je Spielphase, austauschbare Audio-Dateien und eigene SVG-Platzhalter. **[Einfache Anleitung: Sounds, Grafiken, Einstellungen und GitHub-Dateien verwalten](docs/ANPASSEN.md).** [Einfache Anleitung zu Verbrauch, Dashboard, Sicherheitsgrenzen und Betreiberpflichten](docs/BETRIEB.md).
+**Version 7:** 8 Spieler auf eigenen Handys oder 20 am gemeinsamen Bildschirm; Host als reiner Bildschirm; Klassisch, Eigene Prompts, Reverse und konfigurierbarer Mix. Stimmenpunkte, optionaler Siegerbonus, Mehrheits-Skip und frei wählbare Profilbilder. **[Einfache Anleitung: Sounds, Grafiken, Einstellungen und GitHub-Dateien verwalten](docs/ANPASSEN.md).** [Einfache Anleitung zu Verbrauch, Dashboard, Sicherheitsgrenzen und Betreiberpflichten](docs/BETRIEB.md).
 
-Ein deutsches Foto-Partyspiel für 2–10 Personen. Die App besteht aus React/TypeScript, einem kleinen Cloudflare Worker für die Lobby und kurzlebige TURN-Zugänge sowie Cloudflare Static Assets für die Website. **Fotos werden ausschließlich auf den Geräten verarbeitet und über WebRTC-DataChannels ausgetauscht.** Cloudflare sieht kleine Lobby- und Spielnachrichten; bei blockierten Direktverbindungen leitet Cloudflare TURN die *verschlüsselten* WebRTC-Pakete weiter. Es gibt keine Foto-Uploads, KI, Analytics oder Foto-Datenbank.
+Ein deutsches Foto-Partyspiel für 2–20 Personen. Die App besteht aus React/TypeScript, einem kleinen Cloudflare Worker für die Lobby und kurzlebige TURN-Zugänge sowie Cloudflare Static Assets für die Website. **Fotos werden ausschließlich auf den Geräten verarbeitet und über WebRTC-DataChannels ausgetauscht.** Cloudflare sieht kleine Lobby- und Spielnachrichten; bei blockierten Direktverbindungen leitet Cloudflare TURN die *verschlüsselten* WebRTC-Pakete weiter. Es gibt keine Foto-Uploads, KI, Analytics oder Foto-Datenbank.
 
 ## So läuft eine Verbindung ab (ganz einfach)
 
@@ -14,6 +14,10 @@ Ein deutsches Foto-Partyspiel für 2–10 Personen. Die App besteht aus React/Ty
 6. Nach der Runde verschwinden Fotoreferenzen und Object-URLs aus der App. Freigegebene Personen können natürlich Screenshots machen.
 
 Cloudflare bekommt IP-Adressen und Verbindungs-/Spielmetadaten. Der Worker speichert kurzzeitig **nur eine Prüfsumme des Host-Tickets und Zähler gegen Missbrauch** in SQLite-gestützten Durable Objects, **keine Fotos und keine Spielhistorie**. Das Host-Ticket liegt im Browser-RAM, nicht im Einladungslink. Bilder über TURN sind Ende-zu-Ende mit WebRTC verschlüsselt; der Betreiber sieht den Datenverkehr und dessen Umfang, aber nicht den Bildinhalt. Ein Angriff durch viele verteilte Geräte lässt sich ohne Identitätsprüfung nicht sicher ausschließen. Links privat teilen, Beitritte prüfen, Cloudflare-Nutzung beobachten.
+
+## Neue Spielregeln
+
+[Update 7: Modi, Bildschirm, Skip, Verbindungsabbruch und Profilbilder](docs/UPDATE-7.md).
 
 ## Vorbereiten: Cloudflare Realtime TURN
 
@@ -58,7 +62,7 @@ Jede Datei `src/packs/*.json` wird beim Build **automatisch** zur Pack-Auswahl h
 }
 ```
 
-`id` muss einzigartig sein (3–40 Kleinbuchstaben/Ziffern/Bindestriche). `title` ist der sichtbare Packname, `icon` ist dein Emoji oder ein kurzes Textsymbol (maximal 16 Zeichen). `description` beschreibt das Pack. `prompts` enthält mindestens einen deutschen Text. Eine Kategorie gibt es nicht mehr: Jedes Pack wird direkt an- oder ausgeschaltet. Für Erwachsenen-Packs setzt du `adult` auf `true`; diese sind zunächst ausgeschaltet. Ungültige JSON-Dateien oder Schemafehler stoppen den Build mit einer verständlichen Meldung. Die vier mitgelieferten Packs enthalten ausschließlich die 95 ausgewählten Texte: Classic (20), Roast (28), After Dark (27, standardmäßig aus) und Challenges (20). JSON-Packs sind öffentlich auf GitHub und in der Webseite sichtbar: keine privaten Daten hineinschreiben.
+`id` muss einzigartig sein (3–40 Kleinbuchstaben/Ziffern/Bindestriche). `title` ist der sichtbare Packname, `icon` ist dein Emoji oder ein kurzes Textsymbol (maximal 16 Zeichen). `description` beschreibt das Pack. `prompts` enthält mindestens einen deutschen Text. Eine Kategorie gibt es nicht mehr: Jedes Pack wird direkt an- oder ausgeschaltet. Für Erwachsenen-Packs setzt du `adult` auf `true`; diese sind zunächst ausgeschaltet. Ungültige JSON-Dateien oder Schemafehler stoppen den Build mit einer verständlichen Meldung. Die vier mitgelieferten Packs enthalten ausschließlich die 108 ausgewählten Texte: Classic (26), Roast (33), After Dark (29, standardmäßig aus) und Challenges (20). JSON-Packs sind öffentlich auf GitHub und in der Webseite sichtbar: keine privaten Daten hineinschreiben.
 
 ### Freigegeben, aber die Fotoverbindung fehlt?
 

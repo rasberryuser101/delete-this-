@@ -18,7 +18,7 @@ Repo-Name und Worker-Adresse heißen technisch weiterhin `delete-this`. Der sich
 | Musik austauschen | `public/media/music/` |
 | Soundeffekte austauschen | `public/media/sfx/` |
 | Kamera, Trommel, Vorhang, Pokal und Ticket ersetzen | `public/media/art/` |
-| Avatare ersetzen oder weitere anbieten | `public/media/art/avatars/` plus Liste in `customization.json` |
+| Avatare ersetzen oder weitere anbieten | `public/media/art/avatars/` (automatisch erkannt) |
 | Ein Prompt-Pack hinzufügen/ändern/löschen | `src/packs/` |
 
 Die Avatare werden aktuell automatisch aus dem Spielernamen zugeordnet; auf allen Geräten gleich. Es gibt keine persönlichen Avatar-Uploads. Alle Medien, die du ins Repository lädst, sind **öffentliche Website-Dateien**. Private Spielfotos gehören niemals hier hinein.
@@ -83,7 +83,7 @@ Direktlink: https://github.com/rasberryuser101/delete-this-/tree/cloudflare-migr
 | `trophy.svg` | Quadratischer Pokal oder Siegermaskottchen |
 | `ticket.svg` | Quadratische Verbindung-/Einlassgrafik |
 | `curtain.svg` | Einzelne linke Vorhangbahn, Seitenverhältnis etwa 1:5; rechts gespiegelt |
-| `avatars/01.svg` bis `06.svg` | Quadratische Charakterköpfe, z. B. 256 × 256 px |
+| `avatars/01.svg` bis `18.svg` | Quadratische Charakterköpfe, z. B. 256 × 256 px |
 
 SVG, PNG, WebP und JPEG sind möglich, maximal 2 MB pro Grafik. PNG/WebP mit Transparenz eignen sich gut. Keine externen Schriften, Skripte oder verlinkten Bilder in SVGs einbetten.
 
@@ -91,7 +91,7 @@ SVG, PNG, WebP und JPEG sind möglich, maximal 2 MB pro Grafik. PNG/WebP mit Tra
 
 **Wenn du z. B. PNG statt SVG willst:** `drum.png` in `public/media/art` hochladen und in `customization.json` bei `art.drum` den Wert auf `media/art/drum.png` ändern. Erst nach dieser Änderung die alte SVG löschen. Eine PNG einfach in `.svg` umzubenennen konvertiert sie nicht.
 
-Weitere Avatare: Dateien hochladen und ihre Pfade zur Liste `art.avatars` hinzufügen. Beim Ersetzen vorhandener sechs Dateien bleibt die Zuordnung stabil. Ändert sich die Listenlänge oder Reihenfolge, können Namen andere Avatare bekommen.
+Weitere Avatare: einfach eine Datei nach `public/media/art/avatars/` hochladen. Sie erscheint nach dem Build automatisch in der Profilbildauswahl. Kein Eintrag in `customization.json` nötig. Dateiname z. B. `katze.png` oder `19.svg`; ohne Leerzeichen, nur Buchstaben, Zahlen, Bindestriche und Unterstriche. SVG, PNG, WebP, JPG oder JPEG; maximal 2 MB pro Datei, bis zu 60 Avatare. Quadratisch, etwa 256 × 256 px. Die Spieler wählen ihr Bild vor dem Beitritt oder in der Lobby selbst. Bei SVGs blockiert der Build Skripte und externe Inhalte. Vorhandene Dateien direkt unter demselben Namen ersetzen.
 
 ## Einstellungen bearbeiten
 
@@ -135,7 +135,7 @@ Bei einer kleinen Textänderung: Datei öffnen → **History** → vorherige Ver
 
 Der Host wählt in der Lobby **3, 5 oder 10 Runden**. Während einer Partie bleibt die Anzahl fest. Nach der letzten Runde erscheint das Endergebnis, bei Punktegleichstand mehrere Sieger. **Revanche** setzt Punkte und Rundennummer zurück und führt dieselben Geräte in die Lobby zurück; dort sind Rundenzahl und Packs wieder änderbar.
 
-Das braucht nur eine kleine zusätzliche Zahl im bestehenden Spielstand, keinen neuen Dienst und keine Datenbank. Die Übertragungskosten pro Runde bleiben ungefähr gleich; eine kurze Partie hat insgesamt entsprechend weniger Fotos. Die bestehende Bildkomprimierung und der Party-Modus sparen deutlich mehr. Statische Musik/Grafiken laufen über das Website-Hosting, nicht über TURN. Sie erhöhen die Downloadmenge für Besucher, nicht die Anzahl der Foto-Relay-Übertragungen.
+Das braucht nur eine kleine zusätzliche Zahl im bestehenden Spielstand, keinen neuen Dienst und keine Datenbank. Die Übertragungskosten pro Runde bleiben ungefähr gleich; eine kurze Partie hat insgesamt entsprechend weniger Fotos. Die bestehende Bildkomprimierung und der gemeinsame Bildschirm sparen deutlich mehr. Statische Musik/Grafiken laufen über das Website-Hosting, nicht über TURN. Sie erhöhen die Downloadmenge für Besucher, nicht die Anzahl der Foto-Relay-Übertragungen.
 
 ## Offizielle GitHub-Hilfe
 

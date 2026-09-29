@@ -95,7 +95,7 @@ export class Lobby extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url), role = url.searchParams.get('role'), ticket = url.searchParams.get('ticket') || '';
     if (role !== 'HOST' && role !== 'GUEST') return deny();
-    if (this.sockets.size >= 14) return rejectSocket('Diese Lobby ist voll. Bitte den Host kontaktieren.');
+    if (this.sockets.size >= 24) return rejectSocket('Diese Lobby ist voll. Bitte den Host kontaktieren.');
     let hostToken = '';
     if (role === 'HOST') {
       if (this.host()) return rejectSocket('Die Lobby ist bereits geöffnet. Bitte zur bestehenden Lobby zurückkehren.');
@@ -118,7 +118,7 @@ export class Lobby extends DurableObject<Env> {
     let self = this.member(ws);
     const now = Date.now();
     self = now - self.window >= 60_000 ? { ...self, window: now, count: 1 } : { ...self, count: self.count + 1 };
-    if (self.count > (self.role === 'HOST' ? 400 : 160)) { ws.close(1008, 'Zu viele Nachrichten'); return; }
+    if (self.count > (self.role === 'HOST' ? 1200 : 160)) { ws.close(1008, 'Zu viele Nachrichten'); return; }
     ws.serializeAttachment(self);
     let raw: Record<string, unknown>;
     try { raw = JSON.parse(message); } catch { return; }

@@ -11,5 +11,5 @@ it('zeigt im Vorhang keine Bilder und später nur das aktuelle Foto',()=>{
   const first=renderToStaticMarkup(<RevealStage {...props} game={nextReveal(initial)}/>);
   expect(first).toContain('blob:first-photo');expect(first).not.toContain('blob:future-photo');
   const phone=renderToStaticMarkup(<RevealStage {...props} host={false} game={{...nextReveal(initial),mode:'PARTY'}}/>);
-  expect(phone).not.toContain('blob:first-photo');expect(phone).toContain('Alle Augen zum Host');
+  expect(phone).not.toContain('blob:first-photo');expect(phone).toContain('Alle Augen zum Bildschirm');
 });

@@ -39,15 +39,7 @@
     "drum": "media/art/drum.svg",
     "curtain": "media/art/curtain.svg",
     "trophy": "media/art/trophy.svg",
-    "ticket": "media/art/ticket.svg",
-    "avatars": [
-      "media/art/avatars/01.svg",
-      "media/art/avatars/02.svg",
-      "media/art/avatars/03.svg",
-      "media/art/avatars/04.svg",
-      "media/art/avatars/05.svg",
-      "media/art/avatars/06.svg"
-    ]
+    "ticket": "media/art/ticket.svg"
   },
   "credits": []
 }

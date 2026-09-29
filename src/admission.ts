@@ -1,4 +1,6 @@
 export const APPROVAL_MS = 60_000;
+export const MAX_PENDING_REQUESTS = 24;
+export const MAX_JOIN_ATTEMPTS = 30;
 export type JoinRequest = {id: string; name: string; check: string; role?: 'PLAYER'|'DISPLAY'};
 export const peerCheck = (id: string) => id.slice(-8).toUpperCase();
 
@@ -10,7 +12,7 @@ export class AdmissionGate {
   request(id: string, name: string, role: 'PLAYER'|'DISPLAY' = 'PLAYER', check = peerCheck(id)): Promise<void> {
     const now = Date.now();
     this.attempts = this.attempts.filter(t => now - t < 60_000);
-    if (this.pending.has(id) || this.pending.size >= 12 || this.attempts.length >= 12) return Promise.reject(new Error('Zu viele Anfragen. Bitte in einer Minute erneut versuchen.'));
+    if (this.pending.has(id) || this.pending.size >= MAX_PENDING_REQUESTS || this.attempts.length >= MAX_JOIN_ATTEMPTS) return Promise.reject(new Error('Zu viele Anfragen. Bitte in einer Minute erneut versuchen.'));
     this.attempts.push(now);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => this.decide(id, false, 'Die Freigabe ist abgelaufen. Bitte erneut anfragen.'), APPROVAL_MS);

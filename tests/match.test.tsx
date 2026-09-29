@@ -1,6 +1,6 @@
 import { expect,it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createGame,joinPlayer,nextRound,submitPhoto,reveal,nextReveal,castVote,isMatchOver,leaderboard,rematch,setRoundLimit,displayView,viewFor,type RoundLimit } from '../src/game';
+import { createGame,joinPlayer,nextRound,openSubmissions,submitPhoto,reveal,nextReveal,castVote,isMatchOver,leaderboard,rematch,setRoundLimit,displayView,viewFor,type RoundLimit } from '../src/game';
 import { validateMessage } from '../src/protocol';
 import { Leaderboard } from '../src/Leaderboard';
 import { CUSTOM, musicScene,mediaUrl,avatarPath } from '../src/customization';
@@ -9,7 +9,7 @@ it.each([3,5,10] as RoundLimit[])('beendet nach genau %i Runden, verteilt Punkte
  let game=setRoundLimit(joinPlayer(createGame('Host','REMOTE'),{id:'guest',name:'Gast',score:0,connected:true}),limit);
  expect(musicScene(game)).toBe('lobby');
  for(let i=0;i<limit;i++){
-  game=nextRound(game,['classic'],[],()=>0);expect(musicScene(game)).toBe('submit');expect(()=>setRoundLimit(game,3)).toThrow();
+  game=openSubmissions(nextRound(game,['classic'],[],()=>0));expect(musicScene(game)).toBe('submit');expect(()=>setRoundLimit(game,3)).toThrow();
   game=reveal(submitPhoto(submitPhoto(game,'host','a'),'guest','b'),()=>.99);expect(musicScene(game)).toBeNull();
   while(game.phase==='reveal')game=nextReveal(game);expect(musicScene(game)).toBeNull();
   game=castVote(castVote(game,'host','b',()=>0),'guest','a',()=>0);
@@ -17,7 +17,7 @@ it.each([3,5,10] as RoundLimit[])('beendet nach genau %i Runden, verteilt Punkte
   expect(validateMessage({type:'sync',game:viewFor(game,'guest'),you:'guest'})).not.toBeNull();
   expect(validateMessage({type:'display-sync',state:displayView({...game,mode:'PARTY'})})).not.toBeNull();
  }
- expect(game.players.reduce((n,p)=>n+p.score,0)).toBe(limit);expect(()=>nextRound(game,['classic'],[])).toThrow('beendet');
+ expect(game.players.reduce((n,p)=>n+p.score,0)).toBe(limit*3);expect(()=>nextRound(game,['classic'],[])).toThrow('beendet');
  const fresh=rematch(game);expect(fresh).toMatchObject({phase:'lobby',round:0,roundLimit:limit,photos:[],votes:{}});expect(fresh.players.every(p=>p.score===0)).toBe(true);
 });
 it('zeigt geteilte Gesamtsiege ohne zufälligen Gesamtsieger',()=>{

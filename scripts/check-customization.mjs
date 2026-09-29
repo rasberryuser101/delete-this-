@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 const c=JSON.parse(readFileSync(new URL('../customization.json',import.meta.url),'utf8'));
 const check=(ok,text)=>{if(!ok)throw new Error(`customization.json: ${text}`);};
@@ -14,13 +14,20 @@ for(const [keys,group,max] of [[music,c.audio?.music,8_000_000],[effects,c.audio
  const path=group?.[key];check(safe(path,/\.(mp3|wav|ogg)$/i),`Audio ${key}: lokaler media/-Pfad zu MP3, WAV oder OGG.`);
  const file=join('public',path);if(existsSync(file))check(statSync(file).size<=max,`${path} ist zu groß (max. ${max/1000000} MB).`);
 }
-check(Array.isArray(c.art?.avatars)&&c.art.avatars.length>=1&&c.art.avatars.length<=30,'1–30 Avatar-Dateien eintragen.');
-for(const path of [c.art.camera,c.art.drum,c.art.curtain,c.art.trophy,c.art.ticket,...c.art.avatars]){
+for(const path of [c.art.camera,c.art.drum,c.art.curtain,c.art.trophy,c.art.ticket]){
  check(safe(path,/\.(svg|png|webp|jpg|jpeg)$/i),'Grafik: lokaler media/-Pfad zu SVG, PNG, WebP oder JPEG.');
  check(existsSync(join('public',path)),`Grafik fehlt: public/${path}`);
  check(statSync(join('public',path)).size<=2_000_000,`Grafik ${path}: maximal 2 MB.`);
 }
-console.log('Branding, Show, Audio-Einstellungen und Grafiken geprüft. Musik wird nur aus den konfigurierten Dateien geladen.');
+const avatarDir='public/media/art/avatars';
+const avatars=readdirSync(avatarDir).filter(name=>/\.(svg|png|webp|jpg|jpeg)$/i.test(name));
+check(avatars.length>=1&&avatars.length<=60,'1–60 Avatare im Ordner public/media/art/avatars.');
+for(const name of avatars){
+ check(/^[\w-]+\.(svg|png|webp|jpg|jpeg)$/.test(name),`Avatar ${name}: Kleinbuchstaben/Ziffern, Bindestriche, Unterstriche und eine passende Endung verwenden.`);
+ const file=join(avatarDir,name);check(statSync(file).size<=2_000_000,`Avatar ${name}: maximal 2 MB.`);
+ if(name.endsWith('.svg')){const svg=readFileSync(file,'utf8');check(!/<\s*(?:script|foreignObject)\b|\bon\w+\s*=|\b(?:href|src)\s*=\s*["']\s*(?!#)|@import|url\(\s*["']?(?:https?:|\/\/)/i.test(svg),`Avatar ${name}: SVG ohne Skripte, Ereignishandler oder externe Inhalte verwenden.`);}
+}
+console.log(`Branding, Show, Audio und ${avatars.length} Avatare geprüft. Musik nur aus konfigurierten Dateien.`);
 
 check(Array.isArray(c.credits)&&c.credits.length<=50,'credits: Liste mit höchstens 50 Nachweisen.');
 for(const credit of c.credits){for(const key of ['title','author','license'])check(typeof credit[key]==='string'&&credit[key].length>0&&credit[key].length<=200,`Nachweis: ${key} fehlt oder ist zu lang.`);check(typeof credit.url==='string'&&/^https:\/\/[^\s]+$/.test(credit.url),'Nachweis braucht einen HTTPS-Link.');}

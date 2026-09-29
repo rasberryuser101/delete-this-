@@ -22,8 +22,8 @@ async function waitForServer() {
   }
   throw new Error(`Worker nicht erreichbar: ${logs.slice(-3000)}`);
 }
-async function connect(code, role) {
-  const ws = new WebSocket(`${origin.replace('http:', 'ws:')}/api/lobby/${code}?role=${role}`, { headers: { Origin: origin } });
+async function connect(code, role,ip='127.0.0.1') {
+  const ws = new WebSocket(`${origin.replace('http:', 'ws:')}/api/lobby/${code}?role=${role}`, { headers: { Origin: origin,'CF-Connecting-IP':ip } });
   clients.push(ws);
   const inbox = [];
   ws.on('message', data => inbox.push(JSON.parse(data.toString())));
@@ -71,6 +71,13 @@ try {
   for(let i=0;i<161;i++)retry.ws.send('null');
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.equal(retry.ws.readyState, WebSocket.CLOSED, 'Auch ungültige Nachrichten zählen zum Spam-Limit');
+  const crowd=[];
+  // Separate fixture IP: this capacity test must not consume the IP budget of
+  // the independent rate-limit test below. Real Cloudflare sets this header.
+  for(let i=0;i<20;i++){const player=await connect(code,'GUEST','198.51.100.42');await player.next('welcome');crowd.push(player);}
+  assert.equal(crowd.length,20,'Der gemeinsame Bildschirm kann 20 Gäste erreichen');
+  for(const player of crowd)player.ws.close();
+  await new Promise(resolve=>setTimeout(resolve,120));
   const unusedCode = Array.from(randomBytes(10), byte => alphabet[byte % alphabet.length]).join('');
   const missing = await connect(unusedCode, 'GUEST');
   assert.match((await missing.next('error')).message, /Lobby nicht gefunden/);
@@ -86,7 +93,7 @@ try {
   assert.equal(denied.inbox.some(m => m.type === 'welcome'), false, 'Rate-Limit darf keinen Lobbyzugang erteilen');
   const stillMissing = await connect(unusedCode, 'GUEST');
   assert.match((await stillMissing.next('error')).message, /Lobby nicht gefunden/, 'Abgelehnter Host hat keine Lobby erstellt');
-  console.log('Cloudflare Worker: Lobby, erneuter Beitritt, Freigabeentzug, Spam-Limit, TURN-Zugang und Isolation geprüft.');
+  console.log('Cloudflare Worker: 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limit, TURN-Zugang und Isolation geprüft.');
 } finally {
   for (const ws of clients) ws.close();
   worker.kill('SIGTERM');
