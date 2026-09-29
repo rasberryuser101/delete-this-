@@ -31,8 +31,8 @@ it('verteilt Reverse-Fotos ohne Eigenzuweisung und belohnt die Textautoren',()=>
  const guest=viewFor(g,'b');expect(Object.keys(guest.assignments)).toEqual(['b']);expect(guest.photos.filter(p=>p.caption)).toHaveLength(1);expect(validateMessage({type:'sync',game:guest,you:'b'})).not.toBeNull();
  g=toVote(reveal(g));const bPhoto=g.photos.find(p=>p.authorId==='b')!;expect(()=>castVote(g,'b',bPhoto.id)).toThrow();g=castVote(g,'host',bPhoto.id);g=finishVoting(g);expect(g.players.find(p=>p.id==='b')?.score).toBe(2);
 });
-it('mixt ausschließlich ausgewählte Modi und erlaubt Wechsel nur zwischen Runden',()=>{
- const mixed=configureGame(base(),{style:'MIX',mixStyles:['CUSTOM','REVERSE']});expect(nextRound(mixed,[],[],()=>0).roundStyle).toBe('CUSTOM');expect(nextRound(mixed,[],[],()=>.9).roundStyle).toBe('REVERSE');expect(()=>configureGame(mixed,{mixStyles:[]})).toThrow();const round=nextRound(base(),['classic'],[],()=>0);expect(()=>configureGame(round,{style:'REVERSE'})).toThrow();expect(configureGame(skipRound(round),{style:'REVERSE'}).style).toBe('REVERSE');
+it('mixt ausschließlich ausgewählte Modi und sperrt die Einstellungen ab Partiestart',()=>{
+ const mixed=configureGame(base(),{style:'MIX',mixStyles:['CUSTOM','REVERSE']});expect(nextRound(mixed,[],[],()=>0).roundStyle).toBe('CUSTOM');expect(nextRound(mixed,[],[],()=>.9).roundStyle).toBe('REVERSE');expect(()=>configureGame(mixed,{mixStyles:[]})).toThrow();const round=nextRound(base(),['classic'],[],()=>0);expect(()=>configureGame(round,{style:'REVERSE'})).toThrow();expect(()=>configureGame(skipRound(round),{style:'REVERSE'})).toThrow('vor der Partie');
 });
 it('validiert neue Nachrichten und verwirft fremde Pfade und übergroße Texte',()=>{
  expect(validateMessage({type:'caption',text:'Ein guter Text',roundId:'round'})).not.toBeNull();expect(validateMessage({type:'caption',text:'x'.repeat(251),roundId:'round'})).toBeNull();expect(validateMessage({type:'avatar',path:'https://example.org/tracking.png'})).toBeNull();expect(validateMessage({type:'avatar',path:'media/art/avatars/../private.svg'})).toBeNull();expect(validateMessage({type:'skip-prompt',roundId:'round',score:9})).toBeNull();

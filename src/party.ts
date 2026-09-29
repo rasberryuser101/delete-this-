@@ -1,6 +1,9 @@
-export const REACTIONS = ['😂','💀','🚩','👏'] as const;
+export const REACTIONS = ['😂','💀','🚩','👏','🥁','🦗','🔔','📣'] as const;
 export type Reaction = typeof REACTIONS[number];
 export const isReaction = (value: unknown): value is Reaction => REACTIONS.includes(value as Reaction);
+export const REACTION_LABELS:Record<Reaction,string>={'😂':'Lachflash','💀':'Ich kann nicht mehr','🚩':'Rote Flagge','👏':'Applaus','🥁':'Trommelwirbel','🦗':'Peinliche Stille','🔔':'Ding!','📣':'Drama!'};
+export const REACTION_SOUNDS = {'😂':'laugh','💀':'gasp','🚩':'alarm','👏':'applause','🥁':'drumroll','🦗':'crickets','🔔':'ding','📣':'airhorn'} as const;
+export const reactionAllowed = (phase:string) => ['lobby','reveal','vote'].includes(phase);
 const avatars=['🦝','🦆','🦖','🐸','🐙','🦄','🐡','🦥'];
 export function playerAvatar(id:string):string {
   if(id==='host')return '👑';

@@ -4,8 +4,8 @@ import { CUSTOM, mediaUrl } from './customization';
 import { REVEAL_LINES } from './party';
 import './show.css';
 
-type Props = {game:Game;images:Record<string,string>;host:boolean;display?:boolean;busy:boolean;next:()=>void;auto?:boolean;toggleAuto?:()=>void};
-export function RevealStage({game,images,host,display=false,busy,next,auto=false,toggleAuto}:Props) {
+type Props = {game:Game;images:Record<string,string>;host:boolean;display?:boolean;busy:boolean;next:()=>void;auto?:boolean};
+export function RevealStage({game,images,host,display=false,busy,next,auto=false}:Props) {
   const photo=game.photos[game.revealIndex];
   const partyPhone=game.mode==='PARTY'&&!host&&!display;
   const last=game.revealIndex===game.photos.length-1;
@@ -20,6 +20,6 @@ export function RevealStage({game,images,host,display=false,busy,next,auto=false
     </div>
     <p className="show-caption" aria-live="polite">{photo?REVEAL_LINES[(game.round+game.revealIndex-1)%REVEAL_LINES.length]:'Alle Fotos sind da. Bereit für die Beweisaufnahme?'}</p>
     <div className="show-progress" aria-label={`${Math.max(0,game.revealIndex+1)} von ${game.photos.length} Fotos gezeigt`}>{game.photos.map((p,i)=><span key={p.id} className={i<=game.revealIndex?'shown':''}>{i+1}</span>)}</div>
-    {host?<><button className="button giant pink" disabled={busy} onClick={next}>{busy?'Übertragung läuft …':!photo?'VORHANG AUF!':last?'ABSTIMMUNG ÖFFNEN!':'NÄCHSTES BEWEISSTÜCK →'}</button><div className="show-controls">{toggleAuto&&<button className="small" aria-pressed={auto} onClick={toggleAuto}>{auto?"Show pausieren":"Automatisch weiter"}</button>}<p className="fine">{auto?"Die Show läuft. Jedes Foto bekommt seinen großen Auftritt.":"Show pausiert. Du bestimmst das Tempo."}</p></div></>:<p className="fine">Erst die Beweise. Dann das Urteil.</p>}
+    {host?<><button className="button giant pink" disabled={busy} onClick={next}>{busy?'Übertragung läuft …':!photo?'VORHANG AUF!':last?'ABSTIMMUNG ÖFFNEN!':'NÄCHSTES BEWEISSTÜCK →'}</button><p className="fine show-pace">{auto?'Die Show läuft automatisch weiter.':game.autoReveal?'Die Show wartet auf ein Foto. Mit Weiter erneut versuchen.':'Du führst durch die Show. Weiter, wenn alle bereit sind.'}</p></>:<p className="fine">Erst die Beweise. Dann das Urteil.</p>}
   </section>;
 }

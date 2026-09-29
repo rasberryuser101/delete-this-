@@ -9,6 +9,7 @@ export interface Player { id: string; name: string; score: number; connected: bo
 export interface Photo { id: string; ownerId: string; caption?: string; authorId?: string }
 export interface Game {
   phase: Phase; mode: Mode; style: GameStyle; mixStyles: RoundStyle[]; roundStyle: RoundStyle; winnerBonus: boolean;
+  hideScores: boolean; reactionsEnabled: boolean; reactionSounds: boolean; autoReveal: boolean;
   roundLimit: RoundLimit; round: number; roundId: string; prompt: string; pack: PackLabel | null;
   players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null; revealIndex: number;
   suggestions: Record<string,string>; assignments: Record<string,string>; skipVotes: string[]; promptSkips: number;
@@ -17,13 +18,19 @@ export interface Game {
 export const capacity = (mode:Mode) => mode === 'PARTY' ? 20 : 8;
 export const activePlayers = (game:Game) => game.players.filter(p=>p.connected&&!p.spectator);
 export const scoringOwner = (photo:Photo) => photo.authorId ?? photo.ownerId;
-export const createGame = (hostName:string,mode:Mode,roundLimit:RoundLimit=5):Game => ({phase:'lobby',mode,style:'CLASSIC',mixStyles:['CLASSIC','CUSTOM','REVERSE'],roundStyle:'CLASSIC',winnerBonus:true,roundLimit,round:0,roundId:'',prompt:'',pack:null,players:[{id:'host',name:hostName,score:0,connected:true}],photos:[],votes:{},winnerId:null,revealIndex:-1,suggestions:{},assignments:{},skipVotes:[],promptSkips:0,roundPoints:{},roundSkipped:false});
+export type GameOptions = Pick<Game,'style'|'mixStyles'|'winnerBonus'|'hideScores'|'reactionsEnabled'|'reactionSounds'|'autoReveal'>;
+export const createGame = (hostName:string,mode:Mode,roundLimit:RoundLimit=5):Game => ({phase:'lobby',mode,style:'CLASSIC',mixStyles:['CLASSIC','CUSTOM','REVERSE'],roundStyle:'CLASSIC',winnerBonus:true,hideScores:false,reactionsEnabled:true,reactionSounds:true,autoReveal:true,roundLimit,round:0,roundId:'',prompt:'',pack:null,players:[{id:'host',name:hostName,score:0,connected:true}],photos:[],votes:{},winnerId:null,revealIndex:-1,suggestions:{},assignments:{},skipVotes:[],promptSkips:0,roundPoints:{},roundSkipped:false});
 export function joinPlayer(game:Game,player:Player):Game {
   if(game.players.length>=41||!['lobby','result'].includes(game.phase)||game.players.filter(p=>!p.spectator&&!p.removed).length>=capacity(game.mode)||game.players.some(p=>p.id===player.id))throw new Error(`Beitritt nur vor einer Runde mit maximal ${capacity(game.mode)} Spielern.`);
   return {...game,players:[...game.players,player]};
 }
-export function configureGame(game:Game,settings:Partial<Pick<Game,'style'|'mixStyles'|'winnerBonus'>>):Game {
-  if(!['lobby','result'].includes(game.phase)||isMatchOver(game))throw new Error('Einstellungen nur zwischen den Runden ändern.');
+export function configureGame(game:Game,settings:Partial<GameOptions>):Game {
+  if(game.phase!=='lobby'||game.round!==0)throw new Error('Einstellungen nur vor der Partie ändern.');
+  if(settings.style&&!['CLASSIC','CUSTOM','REVERSE','MIX'].includes(settings.style))throw new Error('Unbekannte Variante.');
+  for(const key of Object.keys(settings)){
+    if(!['style','mixStyles','winnerBonus','hideScores','reactionsEnabled','reactionSounds','autoReveal'].includes(key))throw new Error('Unbekannte Einstellung.');
+    if(!['style','mixStyles'].includes(key)&&typeof settings[key as keyof GameOptions]!=='boolean')throw new Error('Ungültige Einstellung.');
+  }
   if(settings.mixStyles&&(!settings.mixStyles.length||settings.mixStyles.length>3||new Set(settings.mixStyles).size!==settings.mixStyles.length||settings.mixStyles.some(s=>!['CLASSIC','CUSTOM','REVERSE'].includes(s))))throw new Error('Wähle mindestens eine Variante für den Mix.');
   return {...game,...settings};
 }
@@ -121,7 +128,8 @@ export function replacePrompt(game:Game,packs:string[],used:string[],random=Math
 }
 export function viewFor(game:Game,viewerId:string):Game {
   const visible=new Set(visiblePhotos(game).map(p=>p.id));
-  return {...game,suggestions:game.suggestions[viewerId]?{[viewerId]:game.suggestions[viewerId]}:{},assignments:game.assignments[viewerId]?{[viewerId]:game.assignments[viewerId]}:{},photos:game.photos.map(photo=>({...photo,ownerId:photo.ownerId===viewerId?viewerId:'hidden',...(photo.authorId?{authorId:photo.authorId===viewerId?viewerId:'hidden'}:{}),...(!visible.has(photo.id)&&game.phase!=='result'&&game.assignments[viewerId]!==photo.id?{caption:undefined}:{})})),votes:Object.fromEntries(Object.keys(game.votes).map(id=>[id,'cast']))};
+  const hidden=game.hideScores&&!isMatchOver(game);
+  return {...game,players:game.players.map(p=>({...p,...(hidden?{score:0}:{})})),roundPoints:hidden?{}:game.roundPoints,suggestions:game.suggestions[viewerId]?{[viewerId]:game.suggestions[viewerId]}:{},assignments:game.assignments[viewerId]?{[viewerId]:game.assignments[viewerId]}:{},photos:game.photos.map(photo=>({...photo,ownerId:photo.ownerId===viewerId?viewerId:'hidden',...(photo.authorId?{authorId:photo.authorId===viewerId?viewerId:'hidden'}:{}),...(!visible.has(photo.id)&&game.phase!=='result'&&game.assignments[viewerId]!==photo.id?{caption:undefined}:{})})),votes:Object.fromEntries(Object.keys(game.votes).map(id=>[id,'cast']))};
 }
 export type PublicDisplayState = Omit<Game,'votes'> & {countdown:number};
 export function displayView(game:Game,countdown=0):PublicDisplayState {
@@ -131,4 +139,4 @@ export function displayView(game:Game,countdown=0):PublicDisplayState {
 export const isMatchOver=(game:Game)=>game.phase==='result'&&game.round>=game.roundLimit;
 export function leaderboard(game:Game){const players=game.players.filter(p=>!p.spectator).sort((a,b)=>b.score-a.score);return players.map(player=>({...player,rank:players.findIndex(p=>p.score===player.score)+1}));}
 export function setRoundLimit(game:Game,limit:RoundLimit):Game {if(game.phase!=='lobby'||game.round!==0||!ROUND_OPTIONS.includes(limit))throw new Error('Rundenzahl nur vor der Partie ändern.');return {...game,roundLimit:limit};}
-export function rematch(game:Game):Game {if(!isMatchOver(game))throw new Error('Die Partie läuft noch.');return {...createGame(game.players[0].name,game.mode,game.roundLimit),style:game.style,mixStyles:game.mixStyles,winnerBonus:game.winnerBonus,players:game.players.filter(p=>!p.removed).map(p=>({...p,score:0}))};}
+export function rematch(game:Game):Game {if(!isMatchOver(game))throw new Error('Die Partie läuft noch.');return {...createGame(game.players[0].name,game.mode,game.roundLimit),style:game.style,mixStyles:game.mixStyles,winnerBonus:game.winnerBonus,hideScores:game.hideScores,reactionsEnabled:game.reactionsEnabled,reactionSounds:game.reactionSounds,autoReveal:game.autoReveal,players:game.players.filter(p=>!p.removed).map(p=>({...p,score:0}))};}

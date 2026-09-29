@@ -15,7 +15,7 @@
 
 **Reverse:** Zuerst reicht jeder ein Foto ein. Eine zufällige zyklische Zuteilung sorgt dafür, dass niemand sein eigenes Foto beschriftet. Jeder schreibt 3–250 Zeichen zum Foto eines anderen. Die Show enthüllt Bild und Text gemeinsam. Punkte gehen an die Person, die den Text geschrieben hat. Für den eigenen Text kann man nicht stimmen.
 
-**Mix:** Wähle mindestens einen der drei Modi. Für jede Runde wird zufällig einer der ausgewählten Modi gezogen. Die Variante und der Mix können in der Lobby und zwischen Runden geändert werden.
+**Mix:** Wähle mindestens einen der drei Modi. Für jede Runde wird zufällig einer der ausgewählten Modi gezogen. Die Variante und der Mix werden vor der Partie in der Lobby gewählt und bleiben für die ganze Partie gleich.
 
 ## Punkte und Skip
 
@@ -42,3 +42,19 @@ Datei nach `public/media/art/avatars/` hochladen und auf `cloudflare-migration` 
 ## Veröffentlichung dieses Pakets
 
 Den Inhalt des Projektordners ins Repository kopieren, nicht noch einmal den äußeren Ordner darin anlegen. Bereits vorhandene MP3s behalten: `public/media/music/lobby.mp3`, `submit.mp3`, `finale.mp3`. Dieses Quellpaket enthält keine persönlichen TURN-Secrets. Bereits im Cloudflare-Worker gesetzte Secrets bleiben dort erhalten. Danach Commit auf dem für Cloudflare eingestellten Branch und Build prüfen. Beide Spielgeräte neu laden und eine neue Lobby erstellen; alte und neue Clients sind nicht kompatibel.
+
+## Update 7.1 – Lobby und erweiterte Einstellungen
+
+Die Lobby trennt Einladung und Crew von den Spielregeln. QR-Codes sind einklappbar. Die Profilbildauswahl nutzt kleine quadratische Kacheln, bleibt auf Handybreiten im Container und schließt nach der Auswahl.
+
+Unter **Erweiterte Einstellungen** wählt der Host vor der Partie:
+
+- Bonuspunkt für den Rundensieg.
+- **Punkte erst im Finale zeigen:** Zwischenstände und Ranglisten bleiben ausgeblendet. Gäste und Displays erhalten bis zum Finale keine Gesamtpunkte oder Rundenpunkte. Der Host berechnet sie weiterhin im Arbeitsspeicher. Der Rundensieger bleibt sichtbar. Das Finale zeigt die echte Rangliste.
+- **Reactions erlauben:** Acht Reactions in der Lobby und bei Präsentation/Abstimmung. Abschalten wird vom Host erzwungen, auch bei manipulierten Gastnachrichten.
+- **Sounds für Reactions:** Ohne diese Option bleiben nur die animierten Reactions. Jeder behält seinen persönlichen Stummknopf.
+- **Foto-Show automatisch/manuell:** Automatisch erscheinen die Bilder nach den konfigurierten Show-Zeiten. Manuell klickt der Host weiter. Bei fehlender Fotoübertragung pausiert die Automatik; nach erfolgreichem Weiter-Klick läuft sie wieder. Die nächste Runde startet immer der Host.
+
+Reactions sind kurze Steuernachrichten ohne Bilder. Pro Person höchstens eine alle 1,8 Sekunden, für die Lobby insgesamt eine alle 1,5 Sekunden. Dadurch überlagern sich die Sounds nicht ständig und die Anzahl verteilter Nachrichten bleibt begrenzt. Sie werden nicht gespeichert. Im Countdown und während der Foto-/Textauswahl sind sie ausgeschaltet. Die Einstellungen bleiben für eine Revanche erhalten und lassen sich dann in der Lobby erneut ändern.
+
+Für eigene Reaction-Sounds könnt ihr `public/media/sfx/laugh.mp3`, `gasp.mp3`, `alarm.mp3`, `applause.mp3`, `drumroll.mp3`, `crickets.mp3`, `ding.mp3` und `airhorn.mp3` hochladen. Fehlt eine Datei, erzeugt Web Audio einen kurzen lokalen Soundeffekt. Hintergrundmusik hat weiterhin keinen Fallback.

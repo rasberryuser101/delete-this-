@@ -1,5 +1,5 @@
 import { AdmissionGate, APPROVAL_MS, peerCheck, type JoinRequest } from './admission';
-import { activePlayers, allCaptioned, assignCaptions, capacity, chooseWrittenPrompt, configureGame, finishVoting, openSubmissions, photosFor, replacePrompt, skipMajority, skipRound, voteToSkip, writeCaption, writePrompt, isMatchOver, setRoundLimit, rematch, type RoundLimit, allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, nextReveal, reveal, submitPhoto, displayView, viewFor, type Game, type Mode } from './game';
+import { activePlayers, allCaptioned, assignCaptions, capacity, chooseWrittenPrompt, configureGame, finishVoting, openSubmissions, photosFor, replacePrompt, skipMajority, skipRound, voteToSkip, writeCaption, writePrompt, isMatchOver, setRoundLimit, rematch, type GameOptions, type RoundLimit, allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, nextReveal, reveal, submitPhoto, displayView, viewFor, type Game, type Mode } from './game';
 import { processImage } from './image';
 import { PhotoStore } from './photoStore';
 import { decodeMessage, encodeMessage, type WireMessage } from './protocol';
@@ -7,7 +7,7 @@ import { CONNECTION_ERROR, JOIN_TIMEOUT_MS, NETWORK_ERROR, createLobbySession, m
 import { parsePhotoMetadata, receivePhoto, transferPhoto, withDeadline, type PhotoMetadata } from './transfer';
 import { play, type Sound } from './sound';
 import { AVATARS, CUSTOM } from './customization';
-import { isReaction, type Reaction } from './party';
+import { isReaction, reactionAllowed, REACTION_SOUNDS, type Reaction } from './party';
 
 type Stage = 'idle'|'search'|'approval'|'connecting'|'connected'|'error';
 export type PlayState = {game:Game|null; role:'HOST'|'PLAYER'|'DISPLAY'|null; you:string; roomCode:string; hostKey:string; busy:boolean; status:string; error:string; countdown:number; progress:number; images:Record<string,string>; requests:JoinRequest[]; displays:{id:string;name:string;connected:boolean}[]; stage:Stage; diagnostic:string; check:string; online:boolean; reaction:{id:string;emoji:Reaction}|null; autoReveal:boolean};
@@ -42,6 +42,7 @@ export class GameController {
   private distributing = new Map<string,Promise<boolean>>();
   private delivered = new Map<string,Set<string>>();
   private reactionTimes = new Map<string,number>();
+  private lastReactionAt = -Infinity;
   private revealTimer:ReturnType<typeof setTimeout>|undefined;
   private reactionTimer:ReturnType<typeof setTimeout>|undefined;
   private deps:Dependencies;
@@ -53,7 +54,7 @@ export class GameController {
   clearError = () => this.patch({error:''});
   fail = (e:unknown) => {this.patch({error:message(e),status:'',busy:false});this.deps.sound('error');};
   private checkName(name:string) { if(!name.trim()) throw new Error('Bitte zuerst einen Namen eingeben.'); return name.trim().slice(0,30); }
-  private clearPhotos() {clearTimeout(this.promptTimer);clearTimeout(this.revealTimer);this.round.abort(); this.round=new AbortController(); this.photos.clear();this.session?.clearTransfers?.();this.receiving.clear();this.distributing.clear();this.delivered.clear();this.reactionTimes.clear();clearTimeout(this.reactionTimer);this.patch({images:{},progress:0,reaction:null,busy:false});}
+  private clearPhotos() {clearTimeout(this.promptTimer);clearTimeout(this.revealTimer);this.round.abort(); this.round=new AbortController(); this.photos.clear();this.session?.clearTransfers?.();this.receiving.clear();this.distributing.clear();this.delivered.clear();this.reactionTimes.clear();this.lastReactionAt=-Infinity;clearTimeout(this.reactionTimer);this.patch({images:{},progress:0,reaction:null,busy:false});}
   private put(id:string,blob:Blob) {this.photos.put(id,blob);this.patch({images:this.photos.urls()});}
   leave = () => {
     this.epoch++; this.lifetime.abort();this.lifetime=new AbortController();
@@ -75,7 +76,8 @@ export class GameController {
   private publish(game:Game) {
     const previous=this.state.game;
     if(game.roundId!==previous?.roundId || game.phase==='result') this.clearPhotos();
-    this.patch({game,countdown:0});
+    if(!game.reactionsEnabled){clearTimeout(this.reactionTimer);this.patch({reaction:null});}
+    this.patch({game,countdown:0,...(game.phase==='lobby'||game.roundId!==previous?.roundId?{autoReveal:game.autoReveal}:{})});
     for(const player of game.players) if(player.id!=='host'&&player.connected) void this.sync(player.id).catch(()=>{});
     for(const [id,d] of this.displays)if(d.connected)void this.sync(id).catch(()=>{});
     if(game.phase==='result'&&previous?.phase!=='result') this.deps.sound(isMatchOver(game)?'gameover':'winner');
@@ -195,18 +197,20 @@ export class GameController {
         if(this.state.game?.roundId!==msg.state.roundId||msg.state.phase==='result')this.clearPhotos();
         const previous=this.state.game;
         const {countdown,...publicGame}=msg.state;
-        this.patch({game:{...publicGame,votes:{}},you:this.session!.selfId,online:true,status:'',countdown});
+        if(!publicGame.reactionsEnabled){clearTimeout(this.reactionTimer);this.patch({reaction:null});}
+        this.patch({game:{...publicGame,votes:{}},autoReveal:publicGame.autoReveal,you:this.session!.selfId,online:true,status:'',countdown});
         if(previous?.phase!==publicGame.phase){if(publicGame.phase==='reveal')this.deps.sound('drumroll');if(publicGame.phase==='vote')this.deps.sound('voting');if(publicGame.phase==='result')this.deps.sound(publicGame.round>=publicGame.roundLimit?'gameover':'winner');}
       } else if(msg.type==='sync') {
         if(this.state.role==='DISPLAY')throw new Error('Privater Spielstand nicht für Displays.');
         if(msg.you!==this.session?.selfId)throw new Error('Spielerzuordnung ungültig.');
         const previous=this.state.game;
         if(previous?.roundId!==msg.game.roundId||msg.game.phase==='result')this.clearPhotos();
-        this.patch({game:msg.game,you:msg.you,online:true,status:'',...(previous?.roundId!==msg.game.roundId?{countdown:0}:{})});
+        if(!msg.game.reactionsEnabled){clearTimeout(this.reactionTimer);this.patch({reaction:null});}
+        this.patch({game:msg.game,autoReveal:msg.game.autoReveal,you:msg.you,online:true,status:'',...(previous?.roundId!==msg.game.roundId?{countdown:0}:{})});
         if(previous?.phase!==msg.game.phase) {if(msg.game.phase==='prompt')this.deps.sound('prompt');if(msg.game.phase==='reveal')this.deps.sound('drumroll');if(msg.game.phase==='vote')this.deps.sound('voting');if(msg.game.phase==='result')this.deps.sound(isMatchOver(msg.game)?'gameover':'winner');}
         if(msg.game.phase==='reveal'&&msg.game.revealIndex>=0&&previous?.revealIndex!==msg.game.revealIndex&&(msg.game.mode==='PARTY'||this.photos.getBlob(msg.game.photos[msg.game.revealIndex].id)))this.deps.sound('camera');
       } else if(msg.type==='countdown') {this.patch({countdown:msg.value});if(msg.value)this.deps.sound('countdown');}
-      else if(msg.type==='reaction') {if(msg.roundId===this.state.game?.roundId&&['reveal','vote'].includes(this.state.game.phase))this.showReaction(msg.emoji);}
+      else if(msg.type==='reaction') {const game=this.state.game;if(game?.reactionsEnabled&&!this.state.countdown&&msg.roundId===game.roundId&&reactionAllowed(game.phase))this.showReaction(msg.emoji);}
       else if(msg.type==='error')throw new Error(msg.message);
       else throw new Error('Nachricht hier nicht erlaubt.');
     }
@@ -279,7 +283,7 @@ export class GameController {
     const epoch=this.epoch,roundId=this.state.game?.roundId;
     this.promptTimer=setTimeout(()=>{const game=this.state.game;if(epoch===this.epoch&&game&&game.roundId===roundId&&game.phase==='prompt')this.publish(openSubmissions(game));},4500);
   }
-  setAutoReveal = (enabled:boolean) => {
+  private setAutoReveal = (enabled:boolean) => {
     this.patch({autoReveal:enabled});clearTimeout(this.revealTimer);
     if(enabled)this.scheduleReveal();
   };
@@ -325,25 +329,27 @@ export class GameController {
       if(epoch!==this.epoch||signal.aborted||this.state.game?.phase!=='reveal')return;
       const next=nextReveal(this.state.game);this.publish(next);
       this.deps.sound(next.phase==='vote'?'voting':'camera');
-      if(next.phase==='reveal'&&!await deliver())this.setAutoReveal(false);
+      if(next.phase==='reveal'){if(!await deliver())this.setAutoReveal(false);else this.patch({autoReveal:this.state.game!.autoReveal});}
     }catch(e){if(epoch===this.epoch&&!signal.aborted)this.fail(e);}
     finally{if(epoch===this.epoch&&!signal.aborted){this.patch({busy:false});this.scheduleReveal();}}
   };
   private showReaction(emoji:Reaction) {
-    clearTimeout(this.reactionTimer);this.patch({reaction:{id:crypto.randomUUID(),emoji}});this.deps.sound('reaction');
+    clearTimeout(this.reactionTimer);this.patch({reaction:{id:crypto.randomUUID(),emoji}});if(this.state.game?.reactionSounds)this.deps.sound(REACTION_SOUNDS[emoji]);
     this.reactionTimer=setTimeout(()=>this.patch({reaction:null}),1400);
   }
   private broadcastReaction(msg:Extract<WireMessage,{type:'reaction'}>,id:string) {
-    const game=this.state.game;if(!game||msg.roundId!==game.roundId||!['reveal','vote'].includes(game.phase))throw new Error('Reaktion gehört nicht zur aktuellen Show.');
-    const now=Date.now();if(now-(this.reactionTimes.get(id)??-Infinity)<1200)return;
+    const game=this.state.game;if(!game||!game.reactionsEnabled||this.state.countdown||msg.roundId!==game.roundId||!reactionAllowed(game.phase))throw new Error('Reaktion gehört nicht zur aktuellen Show.');
+    const now=Date.now();if(now-(this.reactionTimes.get(id)??-Infinity)<1800||now-this.lastReactionAt<1500)return;
+    this.lastReactionAt=now;
     this.reactionTimes.set(id,now);this.showReaction(msg.emoji);
     for(const p of game.players)if(p.id!=='host'&&p.connected)void this.send(p.id,msg).catch(()=>{});
+    for(const [peer,d] of this.displays)if(d.connected)void this.send(peer,msg).catch(()=>{});
   }
   react = async(emoji:Reaction) => {
-    const game=this.state.game;if(this.state.role==='DISPLAY'||!game||!isReaction(emoji)||!this.state.online||!['reveal','vote'].includes(game.phase))return;
+    const game=this.state.game;if(this.state.role==='DISPLAY'||!game||!isReaction(emoji)||!game.reactionsEnabled||this.state.countdown||!this.state.online||!reactionAllowed(game.phase))return;
     const msg={type:'reaction' as const,emoji,roundId:game.roundId};
     if(this.state.role==='HOST')this.broadcastReaction(msg,'host');
-    else {const now=Date.now();if(now-(this.reactionTimes.get('local')??-Infinity)<1200)return;this.reactionTimes.set('local',now);try{await this.send(this.host,msg);}catch{/* Reactions are optional. */}}
+    else {const now=Date.now();if(now-(this.reactionTimes.get('local')??-Infinity)<1800)return;this.reactionTimes.set('local',now);try{await this.send(this.host,msg);}catch{/* Reactions are optional. */}}
   };
   vote = async(id:string) => {
     const game=this.state.game,epoch=this.epoch;if(this.state.role==='DISPLAY'||!game||this.state.busy||!this.state.online)return;
@@ -351,7 +357,7 @@ export class GameController {
     try {if(this.state.role==='HOST')this.publish(castVote(game,'host',id));else await this.send(this.host,{type:'vote',photoId:id,roundId:game.roundId});this.deps.sound('vote');}
     catch(e){if(epoch===this.epoch)this.fail(e);}finally{if(epoch===this.epoch)this.patch({busy:false});}
   };
-  configure = (settings:Partial<Pick<Game,'style'|'mixStyles'|'winnerBonus'>>) => {
+  configure = (settings:Partial<GameOptions>) => {
     if(this.state.role!=='HOST'||!this.state.game||this.state.countdown)return;
     try{if(settings.style&&!['CLASSIC','CUSTOM','REVERSE','MIX'].includes(settings.style))throw new Error('Unbekannte Variante.');this.publish(configureGame(this.state.game,settings));}catch(e){this.fail(e);}
   };
@@ -407,7 +413,7 @@ export class GameController {
   };
   rematch = () => {
     if(this.state.role!=='HOST'||!this.state.game)return;
-    try{this.used=[];this.clearPhotos();this.publish(rematch(this.state.game));this.patch({status:'Neue Partie, neue Ausreden.',error:'',autoReveal:true});}catch(e){this.fail(e);}
+    try{this.used=[];this.clearPhotos();this.publish(rematch(this.state.game));this.patch({status:'Neue Partie, neue Ausreden.',error:'',autoReveal:this.state.game!.autoReveal});}catch(e){this.fail(e);}
   };
   begin = (packs:string[]) => {
     const game=this.state.game;if(!game||this.state.role!=='HOST'||this.state.countdown)return;

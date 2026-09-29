@@ -1,6 +1,6 @@
 import { CUSTOM, mediaUrl, type MusicScene } from './customization';
 import { BackgroundMusic } from './music';
-export type Sound = 'button'|'connected'|'prompt'|'countdown'|'submit'|'reveal'|'vote'|'winner'|'gameover'|'error'|'drumroll'|'camera'|'voting'|'reaction';
+export type Sound = 'button'|'connected'|'prompt'|'countdown'|'submit'|'reveal'|'vote'|'winner'|'gameover'|'error'|'drumroll'|'camera'|'voting'|'reaction'|'laugh'|'gasp'|'alarm'|'applause'|'crickets'|'ding'|'airhorn';
 let context:AudioContext|null=null,master:GainNode|null=null,fx:GainNode|null=null;
 let muted=false,musicEnabled=false,active=false;
 const effects=new Map<string,AudioBuffer>();
@@ -60,8 +60,15 @@ export function play(sound:Sound){
   // The short UI effect plays immediately while its optional replacement loads.
   if(url&&!loading.has(url)&&!unavailable.has(url)){loading.add(url);void load(url).then(b=>effects.set(url,b)).catch(()=>unavailable.add(url)).finally(()=>loading.delete(url));}
   if(sound==='drumroll'){for(let i=0;i<20;i++)percussion(at+i*.065,'snare',.3+i*.025);percussion(at+1.35,'kick');return;}
+  if(sound==='laugh'){[520,450,520,380,450,300].forEach((f,i)=>note(f,at+i*.1,.09,.08,'square'));return;}
+  if(sound==='gasp'){[660,480,320,160].forEach((f,i)=>note(f,at+i*.12,.18,.08));return;}
+  if(sound==='alarm'){[880,590,880,590].forEach((f,i)=>note(f,at+i*.15,.13,.07,'square'));return;}
+  if(sound==='applause'){for(let i=0;i<7;i++)percussion(at+i*.1,'snare',.5);return;}
+  if(sound==='crickets'){for(let i=0;i<3;i++){note(2600,at+i*.28,.06,.04,'sine');note(2900,at+i*.28+.09,.05,.03,'sine');}return;}
+  if(sound==='ding'){note(1568,at,.65,.09,'sine');note(2352,at,.45,.025,'sine');return;}
+  if(sound==='airhorn'){[330,415,494].forEach(f=>note(f,at,.48,.04,'sawtooth'));return;}
   if(sound==='camera'||sound==='reveal'){percussion(at,'hat',2);percussion(at+.045,'kick');[196,294,392].forEach((f,i)=>note(f,at+.07+i*.025,.36,.055));return;}
-  const tones:Record<Sound,number[]>={button:[620,930],connected:[392,523,659,784],prompt:[523,784,1046],countdown:[880],submit:[520,780,1040],reveal:[],vote:[784,1046],winner:[523,659,784,1046],gameover:[523,659,784,1046,784,1046,1319],error:[220,165],drumroll:[],camera:[],voting:[392,523,659,1046],reaction:[420,840]};
+  const tones:Record<Sound,number[]>={button:[620,930],connected:[392,523,659,784],prompt:[523,784,1046],countdown:[880],submit:[520,780,1040],reveal:[],vote:[784,1046],winner:[523,659,784,1046],gameover:[523,659,784,1046,784,1046,1319],error:[220,165],drumroll:[],camera:[],voting:[392,523,659,1046],reaction:[420,840],laugh:[],gasp:[],alarm:[],applause:[],crickets:[],ding:[],airhorn:[]};
   const big=sound==='winner'||sound==='gameover';tones[sound].forEach((f,i)=>{note(f,at+i*(big?.12:.065),big?.38:.12,.09);if(big)note(f/2,at+i*.12,.4,.055,'sine');});
  }catch{/* Audio must never interrupt a game. */}
 }

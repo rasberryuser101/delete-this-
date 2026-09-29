@@ -207,10 +207,9 @@ it('führt die Show automatisch vor, pausiert bei Übertragungsfehlern und räum
  net.blockHostPhotos(true);await vi.advanceTimersByTimeAsync(4500);
  expect(host.snapshot().game?.revealIndex).toBe(0);expect(host.snapshot().autoReveal).toBe(false);
  await vi.advanceTimersByTimeAsync(15000);expect(host.snapshot().game?.revealIndex).toBe(0);
- net.blockHostPhotos(false);host.setAutoReveal(true);await vi.advanceTimersByTimeAsync(6500);
+ net.blockHostPhotos(false);await host.advanceReveal();
  expect(host.snapshot().game?.revealIndex).toBe(1);expect(Object.keys(guest.snapshot().images)).toHaveLength(2);
- host.setAutoReveal(false);await vi.advanceTimersByTimeAsync(10000);expect(host.snapshot().game?.phase).toBe('reveal');
- host.setAutoReveal(true);await vi.advanceTimersByTimeAsync(6500);expect(guest.snapshot().game?.phase).toBe('vote');
+ expect(host.snapshot().autoReveal).toBe(true);await vi.advanceTimersByTimeAsync(6500);expect(guest.snapshot().game?.phase).toBe('vote');
  host.leave();guest.leave();expect(vi.getTimerCount()).toBe(0);
 });
 it('spielt die automatische Show trotz getrennter Spieler weiter',async()=>{
@@ -266,7 +265,26 @@ it('ersetzt einen ausgestiegenen Spieler zwischen Runden ohne seine bisherigen P
 it('spielt eine gemeinsame Bildschirmrunde mit 20 Gästen und blockiert den 21. Spieler',async()=>{
  const net=network(),host=create(net),guests:Array<GameController>=[];await host.create('Bildschirm','PARTY',true);
  for(let i=0;i<20;i++){const guest=create(net);guests.push(guest);const pending=guest.join(`Gast ${i}`,host.snapshot().roomCode);await flush();host.approve(host.snapshot().requests[0].id,true);await pending;}
- const extra=create(net);await extra.join('Zu viel',host.snapshot().roomCode);expect(extra.snapshot().game).toBeNull();expect(host.snapshot().game?.players).toHaveLength(21);
- host.begin(['classic']);await vi.advanceTimersByTimeAsync(7500);for(const guest of guests)await guest.submit(new File(['x'],'photo.jpg'));expect(host.snapshot().game?.phase).toBe('reveal');host.setAutoReveal(false);for(let i=0;i<21;i++)await host.advanceReveal();expect(host.snapshot().game?.phase).toBe('vote');
+ const extra=create(net);await extra.join('Zu viel',host.snapshot().roomCode);expect(extra.snapshot().game).toBeNull();expect(host.snapshot().game?.players).toHaveLength(21);host.configure({autoReveal:false});
+ host.begin(['classic']);await vi.advanceTimersByTimeAsync(7500);for(const guest of guests)await guest.submit(new File(['x'],'photo.jpg'));expect(host.snapshot().game?.phase).toBe('reveal');for(let i=0;i<21;i++)await host.advanceReveal();expect(host.snapshot().game?.phase).toBe('vote');
  const photos=host.snapshot().game!.photos;for(let i=0;i<20;i++){const other=guests[(i+1)%20].snapshot().you;await guests[i].vote(photos.find(p=>p.ownerId===other)!.id);}await flush();expect(host.snapshot().game?.phase).toBe('result');expect(host.snapshot().game?.players.reduce((n,p)=>n+p.score,0)).toBe(21);expect(guests.every(g=>Object.keys(g.snapshot().images).length===0)).toBe(true);
+});
+it('teilt Lobby-Reactions mit eigenen Sounds, erlaubt stummes Reagieren und erzwingt das Abschalten',async()=>{
+ const {host,guest,net}=await pair('PARTY');
+ await guest.react('👏');await flush();expect(host.snapshot().reaction?.emoji).toBe('👏');expect(guest.snapshot().reaction?.emoji).toBe('👏');
+ await host.react('🔔');expect(host.snapshot().reaction?.emoji).toBe('👏'); // global burst limit
+ await vi.advanceTimersByTimeAsync(1800);
+ const sounds=vi.fn();const quietHost=new GameController({session:network().session,sound:sounds});controllers.push(quietHost);await quietHost.create('Solo','PARTY');quietHost.configure({reactionSounds:false});sounds.mockClear();await quietHost.react('🥁');expect(quietHost.snapshot().reaction?.emoji).toBe('🥁');expect(sounds).not.toHaveBeenCalled();
+ host.configure({reactionsEnabled:false});await flush();expect(host.snapshot().reaction).toBeNull();expect(guest.snapshot().reaction).toBeNull();expect(guest.snapshot().game?.reactionsEnabled).toBe(false);
+ await guest.react('😂');expect(host.snapshot().reaction).toBeNull();await expect(net.nodes[0].session.control.onRequest!(JSON.stringify({type:'reaction',emoji:'😂',roundId:''}),{peerId:'device-1',signal:new AbortController().signal})).rejects.toThrow();
+ quietHost.configure({reactionSounds:true});await vi.advanceTimersByTimeAsync(1800);await quietHost.react('🔔');expect(sounds).toHaveBeenLastCalledWith('ding');
+ host.configure({reactionsEnabled:true});host.begin(['classic']);await guest.react('😂');expect(host.snapshot().reaction).toBeNull();
+});
+it('wendet manuelle Präsentation aus der Lobby an und sperrt spätere Änderungen',async()=>{
+ const {host,guest}=await pair('PARTY');host.configure({autoReveal:false,hideScores:true,reactionSounds:false});await flush();expect(guest.snapshot().game).toMatchObject({autoReveal:false,hideScores:true,reactionSounds:false});
+ host.begin(['classic']);await vi.advanceTimersByTimeAsync(7500);await guest.submit(new File(['x'],'guest.jpg'));await host.submit(new File(['x'],'host.jpg'));
+ await vi.advanceTimersByTimeAsync(45000);expect(host.snapshot().game?.revealIndex).toBe(-1);await host.advanceReveal();await vi.advanceTimersByTimeAsync(10000);expect(host.snapshot().game?.revealIndex).toBe(0);
+ await host.advanceReveal();await host.advanceReveal();await guest.vote(host.snapshot().game!.photos.find(p=>p.ownerId==='host')!.id);await host.vote(host.snapshot().game!.photos.find(p=>p.ownerId!=='host')!.id);await flush();
+ expect(host.snapshot().game?.players.some(p=>p.score>0)).toBe(true);expect(guest.snapshot().game?.players.every(p=>p.score===0)).toBe(true);
+ host.configure({style:'REVERSE',hideScores:false});expect(host.snapshot().game).toMatchObject({style:'CLASSIC',hideScores:true,autoReveal:false});expect(host.snapshot().error).toContain('vor der Partie');
 });

@@ -31,7 +31,14 @@
       "drumroll": "media/sfx/drumroll.mp3",
       "camera": "media/sfx/camera.mp3",
       "voting": "media/sfx/voting.mp3",
-      "reaction": "media/sfx/reaction.mp3"
+      "reaction": "media/sfx/reaction.mp3",
+      "laugh": "media/sfx/laugh.mp3",
+      "gasp": "media/sfx/gasp.mp3",
+      "alarm": "media/sfx/alarm.mp3",
+      "applause": "media/sfx/applause.mp3",
+      "crickets": "media/sfx/crickets.mp3",
+      "ding": "media/sfx/ding.mp3",
+      "airhorn": "media/sfx/airhorn.mp3"
     }
   },
   "art": {
