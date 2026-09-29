@@ -58,7 +58,7 @@ Jede Datei `src/packs/*.json` wird beim Build **automatisch** zur Pack-Auswahl h
 }
 ```
 
-`id` muss einzigartig sein (3–40 Kleinbuchstaben/Ziffern/Bindestriche). `title` ist der sichtbare Packname, `icon` ist dein Emoji oder ein kurzes Textsymbol (maximal 16 Zeichen). `description` beschreibt das Pack. `prompts` enthält mindestens einen deutschen Text. Eine Kategorie gibt es nicht mehr: Jedes Pack wird direkt an- oder ausgeschaltet. Für Erwachsenen-Packs setzt du `adult` auf `true`; diese sind zunächst ausgeschaltet. Ungültige JSON-Dateien oder Schemafehler stoppen den Build mit einer verständlichen Meldung. Die mitgelieferten Packs enthalten 621 Prompts. JSON-Packs sind öffentlich auf GitHub und in der Webseite sichtbar: keine privaten Daten hineinschreiben.
+`id` muss einzigartig sein (3–40 Kleinbuchstaben/Ziffern/Bindestriche). `title` ist der sichtbare Packname, `icon` ist dein Emoji oder ein kurzes Textsymbol (maximal 16 Zeichen). `description` beschreibt das Pack. `prompts` enthält mindestens einen deutschen Text. Eine Kategorie gibt es nicht mehr: Jedes Pack wird direkt an- oder ausgeschaltet. Für Erwachsenen-Packs setzt du `adult` auf `true`; diese sind zunächst ausgeschaltet. Ungültige JSON-Dateien oder Schemafehler stoppen den Build mit einer verständlichen Meldung. Die vier mitgelieferten Packs enthalten ausschließlich die 95 ausgewählten Texte: Classic (20), Roast (28), After Dark (27, standardmäßig aus) und Challenges (20). JSON-Packs sind öffentlich auf GitHub und in der Webseite sichtbar: keine privaten Daten hineinschreiben.
 
 ### Freigegeben, aber die Fotoverbindung fehlt?
 

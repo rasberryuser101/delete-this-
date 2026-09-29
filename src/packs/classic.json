@@ -1,0 +1,29 @@
+{
+  "id": "classic",
+  "title": "Classic",
+  "description": "Alltag, Familie und Fotos mit Erklärungsbedarf.",
+  "icon": "★",
+  "adult": false,
+  "prompts": [
+    "Dieses Foto könnte auf einem Wahlplakat hängen.",
+    "Ich, wenn meine Karte beim Bezahlen abgelehnt wird.",
+    "Das Cover eines Albums, das nur deine Großeltern kaufen würden.",
+    "Das Foto, das deine Mutter als Kontaktbild von dir gespeichert hat.",
+    "POV: Du hast gerade erfahren, dass morgen doch Schule/Arbeit ist.",
+    "Das Bild aus dem Reisekatalog, nachdem man tatsächlich dort angekommen ist.",
+    "Eine Pose, die damals bestimmt Sinn ergeben hat.",
+    "Der Moment, wenn im Restaurant jemand sagt: „Wir teilen einfach.“",
+    "Dieses Foto könnte in einer Werbung für etwas völlig Unpassendes vorkommen.",
+    "Der Mensch, der im Gruppenprojekt „moralische Unterstützung“ beigetragen hat.",
+    "Familienurlaub, Tag 6.",
+    "Das Bild, das auf dem Kühlschrank deiner Oma landen würde.",
+    "Wie du aussiehst, wenn jemand deinen Namen ruft, du aber keine Ahnung hast, wer es ist.",
+    "Das Foto, das automatisch entsteht, sobald jemand über 50 eine Handykamera bedient.",
+    "POV: Du sollst fürs Gruppenfoto „einfach natürlich schauen“.",
+    "Das Bild unmittelbar nachdem jemand gesagt hat: „Es kann eigentlich nichts mehr schiefgehen.“",
+    "Eine Szene aus einem Film, dessen Handlung niemand versteht.",
+    "Dieses Foto könnte ohne Änderung auf einer Postkarte verkauft werden.",
+    "Der Gesichtsausdruck, wenn der Zug vor deiner Nase wegfährt.",
+    "Das Foto, bei dem der Fotograf eindeutig aufgegeben hat."
+  ]
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, nextReveal, reveal, submitPhoto, viewFor } from '../src/game';
 import { PACKS, pickPrompt } from '../src/prompts';
-function start() { let g = createGame('Host','PARTY'); g = joinPlayer(g,{id:'guest',name:'Gast',score:0,connected:true}); return nextRound(g,['chaos'],[],()=>0); }
+function start() { let g = createGame('Host','PARTY'); g = joinPlayer(g,{id:'guest',name:'Gast',score:0,connected:true}); return nextRound(g,['classic'],[],()=>0); }
 describe('Spielablauf', () => {
   it('spielt eine vollständige Runde und vergibt genau einen Punkt', () => {
     let g = start(); expect(g.phase).toBe('submit');
@@ -17,7 +17,7 @@ describe('Spielablauf', () => {
     g = castVote(g,'guest','a'); expect(g.phase).toBe('result');
     expect(g.players.reduce((sum,p)=>sum+p.score,0)).toBe(1);
     expect(g.winnerId).not.toBeNull();
-    const next = nextRound(g,['normal'],[g.prompt],()=>0);
+    const next = nextRound(g,['classic'],[g.prompt],()=>0);
     expect(next.photos).toEqual([]); expect(next.votes).toEqual({}); expect(next.round).toBe(2);
     expect(next.players.reduce((sum,p)=>sum+p.score,0)).toBe(1);
   });
@@ -41,13 +41,13 @@ it('blendet die Eigentümer fremder Fotos und die Stimmziele für Gäste aus',()
   expect(guest.votes).toEqual({host:'cast'});
 });
 describe('Prompts',()=>{
-  it('hat mindestens 500 einzigartige deutsche Prompts in Packs',()=>{
-    const prompts=PACKS.flatMap(pack=>pack.prompts); expect(prompts.length).toBeGreaterThanOrEqual(500);
+  it('hat die 95 ausgewählten einzigartigen Texte in vier Packs',()=>{
+    const prompts=PACKS.flatMap(pack=>pack.prompts); expect(prompts.length).toBe(95);
     expect(new Set(prompts).size).toBe(prompts.length);
     expect(PACKS.every(pack=>pack.icon.length>0)).toBe(true);
   });
   it('vermeidet benutzte Prompts bis der Pool erschöpft ist',()=>{
-    const first=pickPrompt(['normal'],[],()=>0); const second=pickPrompt(['normal'],[first.text],()=>0);
+    const first=pickPrompt(['classic'],[],()=>0); const second=pickPrompt(['classic'],[first.text],()=>0);
     expect(second.text).not.toBe(first.text);
   });
 });

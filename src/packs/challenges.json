@@ -1,0 +1,29 @@
+{
+  "id": "challenges",
+  "title": "Challenges",
+  "description": "Zufallsaufgaben für eure Kamerarolle.",
+  "icon": "⚡",
+  "adult": false,
+  "prompts": [
+    "Das dritte Foto rückwärts. Keine Ausreden.",
+    "Scrolle mit geschlossenen Augen fünf Sekunden und stopp.",
+    "Das erste Foto aus dem Jahr 2022, das du findest.",
+    "Das letzte Foto vor deinem letzten Screenshot.",
+    "Dein ältestes verfügbares Selfie.",
+    "Das zuletzt gespeicherte Meme.",
+    "Das letzte Foto, auf dem Essen zu sehen ist.",
+    "Das letzte Bild, das dir jemand geschickt hat.",
+    "Lass die Person rechts von dir eine Zahl zwischen 5 und 50 wählen. So viele Fotos gehst du zurück.",
+    "Öffne einen zufälligen Monat. Drittes Foto.",
+    "Das erste Foto, das du heute gemacht hast.",
+    "Dein letztes komplett unscharfes Foto.",
+    "Das älteste Bild, das du niemandem hier jemals gezeigt hast.",
+    "Suche in deiner Galerie nach „Auto“. Erstes Ergebnis.",
+    "Suche nach „Hund“. Erstes Ergebnis. Auch wenn niemand einen Hund besitzt.",
+    "Scrolle genau so weit zurück, bis du etwas findest, von dessen Existenz du nichts mehr wusstest.",
+    "Das Foto direkt nach einem Gruppenfoto.",
+    "Das Foto direkt vor einem Gruppenfoto.",
+    "Der letzte Screenshot, dessen Kontext heute niemand mehr versteht.",
+    "Gib dein Handy der Person links von dir. Sie darf nur scrollen, nicht auswählen, und stoppt irgendwann. Das nächste Bild ist deins."
+  ]
+}
