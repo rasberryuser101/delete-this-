@@ -5,7 +5,8 @@ type Env = {
   ROOMS: DurableObjectNamespace<Lobby>;
   RATE: DurableObjectNamespace<RateGate>;
   ASSETS: Fetcher;
-  ENTRY_LIMIT: RateLimit;
+  /** Optional: older Cloudflare projects may not have created this binding yet. */
+  ENTRY_LIMIT?: RateLimit;
   TURN_KEY_ID?: string;
   TURN_KEY_TOKEN?: string;
 };
@@ -27,7 +28,16 @@ export default {
     if (role !== 'HOST' && role !== 'GUEST') return deny();
     if ((url.searchParams.get('ticket') || '').length > 80) return deny();
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    if (!(await env.ENTRY_LIMIT.limit({ key: ip })).success) return new Response('Bitte kurz warten.', { status: 429 });
+    // The Durable Object limiter below is the authoritative fallback. This
+    // binding is an extra edge limiter and must never make lobby creation fail
+    // just because a project was deployed before the binding existed.
+    if (env.ENTRY_LIMIT) {
+      try {
+        if (!(await env.ENTRY_LIMIT.limit({ key: ip })).success) return new Response('Bitte kurz warten.', { status: 429 });
+      } catch {
+        // Continue with the persistent RateGate limiter below.
+      }
+    }
     const ipKey = await hash(`${env.TURN_KEY_TOKEN || 'local-dev'}|${ip}`);
     const allowed = await env.RATE.get(env.RATE.idFromName(ipKey)).fetch('https://rate/attempt', { method: 'POST', body: role });
     if (!allowed.ok) return new Response('Zu viele Verbindungsversuche. Später erneut probieren.', { status: 429 });
@@ -138,3 +148,4 @@ export class Lobby extends DurableObject<Env> {
   }
   async alarm() { for (const ws of this.sockets.values()) ws.close(1000, 'Lobby abgelaufen'); this.sockets.clear(); await this.ctx.storage.deleteAll(); }
 }
+
