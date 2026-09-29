@@ -47,7 +47,8 @@ Jede Datei `src/packs/*.json` wird beim Build **automatisch** zur Pack-Auswahl h
   "id": "urlaub",
   "title": "Urlaub eskaliert",
   "description": "Für Gruppenreisen mit zweifelhaften Entscheidungen.",
-  "category": "Freunde",
+  "icon": "🏖️",
+  "adult": false,
   "prompts": [
     "Das Profilbild für jemanden, der auf LinkedIn ein Schneeballsystem als Mindset verkauft.",
     "Fünf Minuten vor dem schlechtesten Hotel-Check-in aller Zeiten."
@@ -55,7 +56,13 @@ Jede Datei `src/packs/*.json` wird beim Build **automatisch** zur Pack-Auswahl h
 }
 ```
 
-`id` muss einzigartig sein (3–40 Kleinbuchstaben/Ziffern/Bindestriche). `title` und `category` erscheinen in der App; neue Kategorien erscheinen automatisch. `prompts` enthält mindestens einen deutschen Text. 18+-Packs bekommen die Kategorie `18+` und sind dadurch zunächst ausgeschaltet. Ungültige JSON-Dateien oder Schemafehler lassen den Build mit einer verständlichen Meldung scheitern. Die mitgelieferten acht Kategorien enthalten 618 Prompts plus ein kleines Beispiel-Pack. JSON-Packs sind öffentlich auf GitHub und in der Webseite sichtbar: keine privaten Daten hineinschreiben.
+`id` muss einzigartig sein (3–40 Kleinbuchstaben/Ziffern/Bindestriche). `title` ist der sichtbare Packname, `icon` ist dein Emoji oder ein kurzes Textsymbol (maximal 16 Zeichen). `description` beschreibt das Pack. `prompts` enthält mindestens einen deutschen Text. Eine Kategorie gibt es nicht mehr: Jedes Pack wird direkt an- oder ausgeschaltet. Für Erwachsenen-Packs setzt du `adult` auf `true`; diese sind zunächst ausgeschaltet. Ungültige JSON-Dateien oder Schemafehler stoppen den Build mit einer verständlichen Meldung. Die mitgelieferten Packs enthalten 621 Prompts. JSON-Packs sind öffentlich auf GitHub und in der Webseite sichtbar: keine privaten Daten hineinschreiben.
+
+### Freigegeben, aber die Fotoverbindung fehlt?
+
+Die Gastgeberfreigabe und der verschlüsselte Fotokanal sind zwei Schritte. `/api/status` muss nach dem Eintragen der Secrets `{"turn":true}` zeigen. Bei `false` fehlt mindestens ein Secret im **aktiven Worker** (Build-Variablen allein reichen nicht). Prüfe `TURN_KEY_ID` und `TURN_KEY_TOKEN` unter Settings → Variables & Secrets. Danach die Version deployen und beide Geräte neu laden.
+
+Die App wartet auf eine Bereitschaftsbestätigung beider Fotokanäle, bevor sie den Gast in die Lobby übernimmt. Ein fehlgeschlagener erster Spielstand-Abruf wird bis zu zweimal wiederholt. Das ausklappbare Feld „Verbindungsdiagnose“ zeigt nur technische Zustände (keine IP-Adressen, Zugangsdaten oder Fotos). „TURN: Zugang erhalten“ bestätigt erhaltene Zugangsdaten, nicht die tatsächliche Nutzung des Relay-Pfads.
 
 ## Lokal entwickeln und testen
 

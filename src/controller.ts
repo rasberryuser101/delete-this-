@@ -6,10 +6,9 @@ import { decodeMessage, encodeMessage, type WireMessage } from './protocol';
 import { CONNECTION_ERROR, JOIN_TIMEOUT_MS, NETWORK_ERROR, createLobbySession, makeRoomCode, normalizeRoomCode, type LobbySession, type LobbyOptions } from './room';
 import { parsePhotoMetadata, receivePhoto, transferPhoto, withDeadline, type PhotoMetadata } from './transfer';
 import { play, type Sound } from './sound';
-import type { Category } from './prompts';
 import { isReaction, type Reaction } from './party';
 
-type Stage = 'idle'|'search'|'approval'|'connected'|'error';
+type Stage = 'idle'|'search'|'approval'|'connecting'|'connected'|'error';
 export type PlayState = {game:Game|null; role:'HOST'|'PLAYER'|'DISPLAY'|null; you:string; roomCode:string; hostKey:string; busy:boolean; status:string; error:string; countdown:number; progress:number; images:Record<string,string>; requests:JoinRequest[]; displays:{id:string;name:string;connected:boolean}[]; stage:Stage; diagnostic:string; check:string; online:boolean; reaction:{id:string;emoji:Reaction}|null};
 const initial = (): PlayState => ({game:null,role:null,you:'host',roomCode:'',hostKey:'',busy:false,status:'',error:'',countdown:0,progress:0,images:{},requests:[],displays:[],stage:'idle',diagnostic:'',check:'',online:true,reaction:null});
 const message = (e:unknown) => e instanceof Error ? e.message : 'Das hat leider nicht geklappt.';
@@ -122,7 +121,7 @@ export class GameController {
       let transportFailed=false;
       const session=await this.deps.session({code,role:guestRole,name:clean,signal:this.lifetime.signal,expectedHostKey,onStatus:status=>{if(epoch===this.epoch)this.patch({status,...(status.includes('fehlgeschlagen')?{online:false}:status==='Verbunden'||status==='Wieder verbunden'?{online:true}:{})});},canPhoto:(...args)=>this.canPhoto(...args),
         authorize:(id,remote)=>{if(remote.publicKey)this.patch({hostKey:remote.publicKey});if(this.host&&this.host!==id)throw new Error('Anderer Host.');this.host=id;},
-        onStage:(stage)=>{if(epoch!==this.epoch||this.state.stage==='connected')return;if(stage==='connecting'){this.patch({stage:'search',status:'Freigegeben. Verbinde …'});arm(JOIN_TIMEOUT_MS,()=>NETWORK_ERROR);return;}this.patch({stage:'approval',status:'Anfrage angekommen. Der Host muss dich freigeben.'});arm(APPROVAL_MS+10_000,()=> 'Keine Freigabe erhalten. Bitte den Host fragen und erneut beitreten.');},
+        onStage:(stage)=>{if(epoch!==this.epoch||this.state.stage==='connected')return;if(stage==='connecting'){this.patch({stage:'connecting',status:'Freigegeben. Verbinde …'});arm(JOIN_TIMEOUT_MS,()=>this.session?.connectionError?.()??NETWORK_ERROR);return;}this.patch({stage:'approval',status:'Anfrage angekommen. Der Host muss dich freigeben.'});arm(APPROVAL_MS+10_000,()=> 'Keine Freigabe erhalten. Bitte den Host fragen und erneut beitreten.');},
         onJoinError:(id,error)=>{if(epoch!==this.epoch)return;transportFailed=true;if(this.state.stage==='connected'){this.leave();this.fail(new Error(error));return;}if(id===this.host)rejectJoin(new Error(error.includes('abgelehnt')?error:NETWORK_ERROR));}
       });
       if(epoch!==this.epoch){void session.room.leave().catch(()=>{});return;}
@@ -133,7 +132,12 @@ export class GameController {
       try {await joined;} finally {clearTimeout(this.timer);this.cancelJoin=undefined;}
       if(epoch!==this.epoch)return;
       this.patch({busy:false,stage:'connected',online:true,status:'Freigegeben! Spielstand wird geladen …'});
-      try{await this.send(this.host,{type:'ready'});}catch{this.patch({online:false,status:'Spielstand wird erneut angefordert …'});}this.deps.sound('connected');
+      for(let attempt=0;attempt<3;attempt++) {
+        if(epoch!==this.epoch)return;
+        try { await this.send(this.host,{type:'ready'}); break; }
+        catch { if(attempt===2 && !this.state.game)throw new Error('Spielstand konnte nicht geladen werden. Bitte erneut beitreten.'); this.patch({status:'Spielstand wird erneut angefordert …'}); }
+      }
+      if(this.state.game)this.patch({online:true,status:''});this.deps.sound('connected');
     } catch(e) {if(epoch!==this.epoch)return;const diagnostic=this.state.diagnostic;this.leave();this.patch({stage:'error',diagnostic});this.fail(e);}
   };
   private attach(session:LobbySession,epoch:number) {
@@ -155,10 +159,8 @@ export class GameController {
     };
   }
   private startPolling(epoch:number) {
-    // State arrives on each change. This timer only refreshes local development diagnostics;
-    // reconnect is handled by the room transport, not a full sync every eight seconds.
-    if(!import.meta.env.DEV)return;
-    this.poll=setInterval(()=>{if(epoch===this.epoch&&this.session?.diagnostics)void this.session.diagnostics().then(diagnostic=>{if(epoch===this.epoch)this.patch({diagnostic});});},15_000);
+    // Local status only: no repeated network snapshots or image transfers.
+    this.poll=setInterval(()=>{if(epoch===this.epoch&&this.session?.diagnostics)void this.session.diagnostics().then(diagnostic=>{if(epoch===this.epoch)this.patch({diagnostic});});},3_000);
   }
   private async control(data:unknown,id:string) {
     const msg=decodeMessage(data);if(!msg)throw new Error('Ungültige Nachricht.');
@@ -307,9 +309,9 @@ export class GameController {
     try {if(this.state.role==='HOST')this.publish(castVote(game,'host',id));else await this.send(this.host,{type:'vote',photoId:id,roundId:game.roundId});this.deps.sound('vote');}
     catch(e){if(epoch===this.epoch)this.fail(e);}finally{if(epoch===this.epoch)this.patch({busy:false});}
   };
-  begin = (categories:Category[],packs?:string[]) => {
+  begin = (packs:string[]) => {
     const game=this.state.game;if(!game||this.state.role!=='HOST'||this.state.countdown)return;
-    try{nextRound(game,categories,this.used,Math.random,packs);}catch(e){this.fail(e);return;}
+    try{nextRound(game,packs,this.used);}catch(e){this.fail(e);return;}
     if(game.players.some(p=>!p.connected)){this.fail(new Error('Bitte auf getrennte Spieler warten oder sie entfernen.'));return;}
     const epoch=this.epoch;this.gate.clear();let value=3;
     const tick=()=>{
@@ -318,7 +320,7 @@ export class GameController {
       for(const p of this.state.game!.players)if(p.id!=='host')void this.send(p.id,{type:'countdown',value}).catch(()=>{});
       for(const [id,d] of this.displays)if(d.connected)void this.send(id,{type:'countdown',value}).catch(()=>{});
       if(value){this.deps.sound('countdown');value--;this.countdownTimer=setTimeout(tick,1000);}
-      else {try{const next=nextRound(this.state.game!,categories,this.used,Math.random,packs);this.used.push(next.prompt);this.publish(next);this.deps.sound('prompt');}catch(e){this.fail(e);}}
+      else {try{const next=nextRound(this.state.game!,packs,this.used);this.used.push(next.prompt);this.publish(next);this.deps.sound('prompt');}catch(e){this.fail(e);}}
     };tick();
   };
   remove = (id:string) => {

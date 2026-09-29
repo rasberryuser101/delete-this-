@@ -2,7 +2,6 @@
   "id": "roast",
   "title": "Roast",
   "description": "Prompts für Roast.",
-  "category": "Roast",
   "prompts": [
     "Ein Foto mit der Ausstrahlung einer PowerPoint-Folie von 2006.",
     "Ein Foto mit der Ausstrahlung einer PowerPoint-Folie von 2006 – und die Erklärung macht es nur schlimmer.",
@@ -88,5 +87,7 @@
     "Wenn die Kamera höflich war und trotzdem Anzeige erstattet.",
     "Wenn die Kamera höflich war und trotzdem Anzeige erstattet – und die Erklärung macht es nur schlimmer.",
     "Wenn die Kamera höflich war und trotzdem Anzeige erstattet – das bleibt bitte unter uns."
-  ]
+  ],
+  "icon": "🔥",
+  "adult": false
 }

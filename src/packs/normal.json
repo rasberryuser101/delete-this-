@@ -2,7 +2,6 @@
   "id": "normal",
   "title": "Normal",
   "description": "Prompts für Normal.",
-  "category": "Normal",
   "prompts": [
     "Dieses Bild würde deine Karriere beenden.",
     "Dieses Bild würde deine Karriere beenden – und die Erklärung macht es nur schlimmer.",
@@ -88,5 +87,7 @@
     "Ein Bild, das der Algorithmus für „mutig“ und deine Freunde für „bitte löschen“ hält.",
     "Ein Bild, das der Algorithmus für „mutig“ und deine Freunde für „bitte löschen“ hält – und die Erklärung macht es nur schlimmer.",
     "Ein Bild, das der Algorithmus für „mutig“ und deine Freunde für „bitte löschen“ hält – das bleibt bitte unter uns."
-  ]
+  ],
+  "icon": "📸",
+  "adult": false
 }

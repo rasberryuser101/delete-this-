@@ -2,7 +2,6 @@
   "id": "dating",
   "title": "Dating",
   "description": "Prompts für Dating.",
-  "category": "Dating",
   "prompts": [
     "Das Foto, bei dem die Dating-App eine Sicherheitsfrage stellt.",
     "Das Foto, bei dem die Dating-App eine Sicherheitsfrage stellt – und die Erklärung macht es nur schlimmer.",
@@ -79,5 +78,7 @@
     "Wenn aus „Netflix und chillen“ ein WLAN-Störungsticket wird.",
     "Wenn aus „Netflix und chillen“ ein WLAN-Störungsticket wird – und die Erklärung macht es nur schlimmer.",
     "Wenn aus „Netflix und chillen“ ein WLAN-Störungsticket wird – der Gruppenchat hat Beweise."
-  ]
+  ],
+  "icon": "💘",
+  "adult": false
 }

@@ -97,7 +97,7 @@ export class Lobby extends DurableObject<Env> {
       if (!allowed.ok) { send(ws, { type: 'error', message: 'TURN-Limit erreicht. Später erneut versuchen.' }); send(ws, { type: 'turn', iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] }); return; }
       if (!this.env.TURN_KEY_ID || !this.env.TURN_KEY_TOKEN) { send(ws, { type: 'turn', iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] }); return; }
       try {
-        const response = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(this.env.TURN_KEY_ID)}/credentials/generate-ice-servers`, { method: 'POST', headers: { Authorization: `Bearer ${this.env.TURN_KEY_TOKEN}`, 'Content-Type': 'application/json' }, body: json({ ttl: 7200 }) });
+        const response = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(this.env.TURN_KEY_ID)}/credentials/generate-ice-servers`, { method: 'POST', headers: { Authorization: `Bearer ${this.env.TURN_KEY_TOKEN}`, 'Content-Type': 'application/json' }, body: json({ ttl: 7200 }), signal: AbortSignal.timeout(10_000) });
         if (!response.ok) throw new Error('TURN credentials failed');
         const payload = await response.json() as { iceServers?: unknown };
         if (!Array.isArray(payload.iceServers) || !payload.iceServers.length) throw new Error('TURN response invalid');
@@ -107,7 +107,7 @@ export class Lobby extends DurableObject<Env> {
     }
     if (raw.type !== 'route' || !IDENT.test(String(raw.to)) || !raw.data || typeof raw.data !== 'object' || Array.isArray(raw.data)) return;
     const data = raw.data as Record<string, unknown>, kind = data.type;
-    if (typeof kind !== 'string' || !['HOST', 'JOIN', 'APPROVED', 'DENIED', 'OFFER', 'ANSWER', 'ICE', 'RESTART', 'CONTROL', 'ACK'].includes(kind)) return;
+    if (typeof kind !== 'string' || !['HOST', 'JOIN', 'APPROVED', 'DENIED', 'OFFER', 'ANSWER', 'ICE', 'RESTART', 'CHANNEL_READY', 'CONTROL', 'ACK'].includes(kind)) return;
     const target = this.sockets.get(String(raw.to)); if (!target) return;
     const dest = this.member(target);
     if (self.role === dest.role || (self.role === 'GUEST' && this.host() !== target)) return;

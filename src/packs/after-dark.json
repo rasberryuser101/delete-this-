@@ -2,7 +2,6 @@
   "id": "after-dark",
   "title": "18+",
   "description": "Für Erwachsene – separat aktivieren.",
-  "category": "18+",
   "prompts": [
     "Das Foto, das nur im Erwachsenen-Gruppenchat überlebt.",
     "Das Foto, das nur im Erwachsenen-Gruppenchat überlebt – und die Erklärung macht es nur schlimmer.",
@@ -79,5 +78,7 @@
     "Wenn aus „Bleib noch kurz“ ein kompletter Sonntag wird.",
     "Wenn aus „Bleib noch kurz“ ein kompletter Sonntag wird – und die Erklärung macht es nur schlimmer.",
     "Wenn aus „Bleib noch kurz“ ein kompletter Sonntag wird – der Gruppenchat hat Beweise."
-  ]
+  ],
+  "icon": "🔞",
+  "adult": true
 }

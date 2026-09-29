@@ -2,7 +2,6 @@
   "id": "chaos",
   "title": "Chaos",
   "description": "Prompts für Chaos.",
-  "category": "Chaos",
   "prompts": [
     "Das Foto, das fünf Sekunden vor dem Feueralarm entstand.",
     "Das Foto, das fünf Sekunden vor dem Feueralarm entstand – und die Erklärung macht es nur schlimmer.",
@@ -79,5 +78,7 @@
     "Wenn die Realität kurz zur schlecht geschnittenen Sitcom wird.",
     "Wenn die Realität kurz zur schlecht geschnittenen Sitcom wird – und die Erklärung macht es nur schlimmer.",
     "Wenn die Realität kurz zur schlecht geschnittenen Sitcom wird – der Gruppenchat hat Beweise."
-  ]
+  ],
+  "icon": "🌪️",
+  "adult": false
 }

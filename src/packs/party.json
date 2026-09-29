@@ -2,7 +2,6 @@
   "id": "party",
   "title": "Party",
   "description": "Prompts für Party.",
-  "category": "Party",
   "prompts": [
     "Das letzte seriöse Foto dieser Party.",
     "Das letzte seriöse Foto dieser Party – und die Erklärung macht es nur schlimmer.",
@@ -79,5 +78,7 @@
     "Wenn der Abend mit einem dramatischen Türschild endet.",
     "Wenn der Abend mit einem dramatischen Türschild endet – und die Erklärung macht es nur schlimmer.",
     "Wenn der Abend mit einem dramatischen Türschild endet – der Gruppenchat hat Beweise."
-  ]
+  ],
+  "icon": "🪩",
+  "adult": false
 }

@@ -1,18 +1,18 @@
-import { pickPrompt, type Category } from './prompts';
+import { pickPrompt, type PackLabel } from './prompts';
 export type Mode = 'PARTY' | 'REMOTE';
 export type Phase = 'lobby' | 'submit' | 'reveal' | 'vote' | 'result';
 export interface Player { id: string; name: string; score: number; connected: boolean }
 export interface Photo { id: string; ownerId: string }
-export interface Game { phase: Phase; mode: Mode; round: number; roundId: string; prompt: string; category: Category | null; players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null; revealIndex: number }
-export const createGame = (hostName: string, mode: Mode): Game => ({phase: 'lobby', mode, round: 0, roundId: '', prompt: '', category: null, players: [{id: 'host', name: hostName, score: 0, connected: true}], photos: [], votes: {}, winnerId: null, revealIndex:-1});
+export interface Game { phase: Phase; mode: Mode; round: number; roundId: string; prompt: string; pack: PackLabel | null; players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null; revealIndex: number }
+export const createGame = (hostName: string, mode: Mode): Game => ({phase: 'lobby', mode, round: 0, roundId: '', prompt: '', pack: null, players: [{id: 'host', name: hostName, score: 0, connected: true}], photos: [], votes: {}, winnerId: null, revealIndex:-1});
 export function joinPlayer(game: Game, player: Player): Game {
   if (game.phase !== 'lobby' || game.players.length >= 10 || game.players.some(p => p.id === player.id)) throw new Error('Beitritt nur in der Lobby mit maximal 10 Personen.');
   return {...game, players: [...game.players, player]};
 }
-export function nextRound(game: Game, categories: Category[], used: string[], random = Math.random, packs?: string[]): Game {
+export function nextRound(game: Game, packs: string[], used: string[], random = Math.random): Game {
   if (!['lobby', 'result'].includes(game.phase) || game.players.filter(p => p.connected).length < 2) throw new Error('Es braucht mindestens zwei verbundene Spieler.');
-  const selected = pickPrompt(categories, used, random, packs);
-  return {...game, phase: 'submit', round: game.round + 1, roundId: crypto.randomUUID(), prompt: selected.text, category: selected.category, photos: [], votes: {}, winnerId: null, revealIndex:-1};
+  const selected = pickPrompt(packs, used, random);
+  return {...game, phase: 'submit', round: game.round + 1, roundId: crypto.randomUUID(), prompt: selected.text, pack: selected.pack, photos: [], votes: {}, winnerId: null, revealIndex:-1};
 }
 export function submitPhoto(game: Game, ownerId: string, photoId: string): Game {
   if (game.phase !== 'submit' || !game.players.some(p => p.id === ownerId && p.connected) || game.photos.some(p => p.ownerId === ownerId || p.id === photoId)) throw new Error('Foto kann in dieser Runde nicht eingereicht werden.');
@@ -70,9 +70,9 @@ export function viewFor(game: Game, viewerId: string): Game {
 }
 
 /** Only already-public information is eligible for the display control path. */
-export type PublicDisplayState = Pick<Game,'phase'|'mode'|'round'|'roundId'|'prompt'|'category'|'players'|'winnerId'|'revealIndex'> & {photos:Photo[];countdown:number};
+export type PublicDisplayState = Pick<Game,'phase'|'mode'|'round'|'roundId'|'prompt'|'pack'|'players'|'winnerId'|'revealIndex'> & {photos:Photo[];countdown:number};
 export function displayView(game:Game,countdown=0):PublicDisplayState {
-  return {countdown,phase:game.phase,mode:game.mode,round:game.round,roundId:game.roundId,prompt:game.prompt,category:game.category,
+  return {countdown,phase:game.phase,mode:game.mode,round:game.round,roundId:game.roundId,prompt:game.prompt,pack:game.pack,
     players:game.players.map((p,i)=>({...p,id:`player-${i}`})),winnerId:game.winnerId?`player-${game.players.findIndex(p=>p.id===game.winnerId)}`:null,revealIndex:visiblePhotos(game).length?game.revealIndex:-1,
     photos:visiblePhotos(game).map(p=>({id:p.id,ownerId:'hidden'}))};
 }

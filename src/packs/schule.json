@@ -2,7 +2,6 @@
   "id": "schule",
   "title": "Schule",
   "description": "Prompts für Schule.",
-  "category": "Schule",
   "prompts": [
     "Das Foto, das in der Klassenfahrt-Präsentation zensiert wird.",
     "Das Foto, das in der Klassenfahrt-Präsentation zensiert wird – und die Erklärung macht es nur schlimmer.",
@@ -79,5 +78,7 @@
     "Wenn der Elternabend eine unerwartete Beweisaufnahme wird.",
     "Wenn der Elternabend eine unerwartete Beweisaufnahme wird – und die Erklärung macht es nur schlimmer.",
     "Wenn der Elternabend eine unerwartete Beweisaufnahme wird – der Gruppenchat hat Beweise."
-  ]
+  ],
+  "icon": "🎒",
+  "adult": false
 }

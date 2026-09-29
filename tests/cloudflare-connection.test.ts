@@ -6,6 +6,7 @@ import { channelPair, type FakeChannel } from './fakeChannel';
 type Msg = { type: string; id?: string; to?: string; from?: string; data?: { type: string } };
 const webSockets = new Map<string, FakeSocket>();
 let nextSocket = 0;
+let guestOpenDelay = 0;
 class FakeSocket {
   static OPEN = 1;
   readyState = 0;
@@ -65,8 +66,9 @@ class FakePC {
       const guest = [...connections.values()].find(pc => pc.partner === this);
       if (guest && this.channels) queueMicrotask(() => {
         this.connectionState = guest.connectionState = 'connected';
-        this.channels!.a.readyState = this.channels!.b.readyState = 'open';
-        this.channels!.a.dispatchEvent(new Event('open')); this.channels!.b.dispatchEvent(new Event('open'));
+        this.channels!.a.readyState = 'open';
+        this.channels!.a.dispatchEvent(new Event('open'));
+        setTimeout(() => { if (this.channels!.b.readyState === 'closed') return; this.channels!.b.readyState = 'open'; this.channels!.b.dispatchEvent(new Event('open')); }, guestOpenDelay);
       });
     }
   }
@@ -74,9 +76,10 @@ class FakePC {
   close() { this.connectionState = 'closed'; this.channels?.a.close(); this.channels?.b.close(); connections.delete(this.id); }
 }
 const sessions: CloudflareLobby[] = [];
-afterEach(async () => { await Promise.all(sessions.splice(0).map(s => s.close())); webSockets.clear(); connections.clear(); vi.unstubAllGlobals(); });
+afterEach(async () => { await Promise.all(sessions.splice(0).map(s => s.close())); webSockets.clear(); connections.clear(); guestOpenDelay = 0; vi.unstubAllGlobals(); });
 
-it('verbindet genehmigten Gast, bestätigt Steuerdaten und überträgt Fotobytes nur per RTCDataChannel', async () => {
+it.each([0, 150])('wartet auf beide Datenkanäle (Gast %i ms später) und überträgt freigegebene Fotos', async (delay) => {
+  guestOpenDelay = delay;
   vi.stubGlobal('isSecureContext', true);
   vi.stubGlobal('location', { origin: 'https://example.org' });
   vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
@@ -89,6 +92,7 @@ it('verbindet genehmigten Gast, bestätigt Steuerdaten und überträgt Fotobytes
   const guest = new CloudflareLobby({ code: 'ABCDEFGH23', role: 'PLAYER', name: 'Gast', expectedHostKey: host.session.publicKey, authorize: () => {}, canPhoto: () => true }, await makeIdentity('guest'));
   sessions.push(guest); await guest.start();
   await vi.waitFor(() => expect(joined).toHaveBeenCalledWith('guest'));
+  for (const ws of webSockets.values()) expect(ws.sent.some(m=>m.data?.type==='CHANNEL_READY')).toBe(true);
   const receiveControl = vi.fn(async () => ({ ok: true as const })); host.session.control.onRequest = receiveControl;
   await guest.session.control.request('{"type":"ready"}', { target: 'host' });
   expect(receiveControl).toHaveBeenCalledWith('{"type":"ready"}', expect.objectContaining({ peerId: 'guest' }));

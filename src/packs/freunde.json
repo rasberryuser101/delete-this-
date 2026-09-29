@@ -2,7 +2,6 @@
   "id": "freunde",
   "title": "Freunde",
   "description": "Prompts für Freunde.",
-  "category": "Freunde",
   "prompts": [
     "Der Beweis, warum diese Freundesgruppe keine Aufsicht haben darf.",
     "Der Beweis, warum diese Freundesgruppe keine Aufsicht haben darf – und die Erklärung macht es nur schlimmer.",
@@ -79,5 +78,7 @@
     "Wenn Freundschaft bedeutet, gemeinsam die falsche Tür zu öffnen.",
     "Wenn Freundschaft bedeutet, gemeinsam die falsche Tür zu öffnen – und die Erklärung macht es nur schlimmer.",
     "Wenn Freundschaft bedeutet, gemeinsam die falsche Tür zu öffnen – der Gruppenchat hat Beweise."
-  ]
+  ],
+  "icon": "🫂",
+  "adult": false
 }

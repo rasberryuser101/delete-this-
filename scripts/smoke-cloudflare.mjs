@@ -3,10 +3,14 @@ import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const origin = 'http://127.0.0.1:8899';
 const bin = fileURLToPath(new URL('../node_modules/.bin/wrangler', import.meta.url));
 const preload = fileURLToPath(new URL('./local-test-network.cjs', import.meta.url));
-const worker = spawn(bin, ['dev', '--local', '--ip', '127.0.0.1', '--port', '8899', '--log-level', 'error'], { env: { ...process.env, NODE_OPTIONS: `--require=${preload}`, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const stateDir = await mkdtemp(join(tmpdir(), 'delete-this-worker-'));
+const worker = spawn(bin, ['dev', '--local', '--ip', '127.0.0.1', '--port', '8899', '--persist-to', stateDir, '--log-level', 'error'], { env: { ...process.env, NODE_OPTIONS: `--require=${preload}`, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let logs = '';
 for (const pipe of [worker.stdout, worker.stderr]) pipe.on('data', data => { logs += data.toString(); });
 const clients = [];
@@ -48,6 +52,8 @@ try {
   assert.equal((await guest.next('route')).data.type, 'APPROVED');
   guest.ws.send(JSON.stringify({ type: 'turn' }));
   assert.match(JSON.stringify((await guest.next('turn')).iceServers), /stun\.cloudflare\.com/);
+  guest.ws.send(JSON.stringify({ type: 'route', to: welcome.id, data: { type: 'CHANNEL_READY' } }));
+  assert.equal((await host.next('route')).data.type, 'CHANNEL_READY');
   guest.ws.send(JSON.stringify({ type: 'route', to: welcome.id, data: { type: 'ICE', candidate: { candidate: 'candidate:1' } } }));
   assert.equal((await host.next('route')).data.type, 'ICE');
   const other = await connect(otherCode, 'HOST'); await other.next('welcome');
@@ -58,4 +64,6 @@ try {
 } finally {
   for (const ws of clients) ws.close();
   worker.kill('SIGTERM');
+  await new Promise(resolve => worker.exitCode !== null ? resolve() : worker.once('exit', resolve));
+  await rm(stateDir, { recursive: true, force: true });
 }
