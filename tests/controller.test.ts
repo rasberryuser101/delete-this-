@@ -207,3 +207,16 @@ it('wartet bei automatischer Show auf getrennte Spieler',async()=>{
  net.disconnect('device-0','device-1');await vi.advanceTimersByTimeAsync(15000);expect(host.snapshot().game?.revealIndex).toBe(-1);
  net.reconnect('device-0','device-1');await vi.advanceTimersByTimeAsync(1000);expect(host.snapshot().game?.revealIndex).toBe(0);
 });
+it('synchronisiert drei Runden und ein Finale zu Gästen, blockiert weitere Runden und behält die Lobby für eine Revanche',async()=>{
+ const {host,guest}=await pair('REMOTE');host.chooseRounds(3);await flush();expect(guest.snapshot().game?.roundLimit).toBe(3);
+ for(let i=0;i<3;i++){
+  host.begin(['normal']);await vi.advanceTimersByTimeAsync(3000);
+  await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));
+  await host.advanceReveal();await host.advanceReveal();await host.advanceReveal();
+  await host.vote(host.snapshot().game!.photos.find(p=>p.ownerId!=='host')!.id);await guest.vote(host.snapshot().game!.photos.find(p=>p.ownerId==='host')!.id);await flush();
+ }
+ expect(guest.snapshot().game).toMatchObject({phase:'result',round:3,roundLimit:3});expect(guest.snapshot().images).toEqual({});expect(host.snapshot().images).toEqual({});
+ host.begin(['normal']);expect(host.snapshot().countdown).toBe(0);expect(host.snapshot().error).toContain('beendet');
+ host.rematch();await flush();expect(guest.snapshot().game).toMatchObject({phase:'lobby',round:0,roundLimit:3});expect(guest.snapshot().game?.players.every(p=>p.score===0)).toBe(true);
+ host.chooseRounds(10);await flush();expect(guest.snapshot().game?.roundLimit).toBe(10);
+});

@@ -1,16 +1,19 @@
 import { pickPrompt, type PackLabel } from './prompts';
+export const ROUND_OPTIONS = [3, 5, 10] as const;
+export type RoundLimit = typeof ROUND_OPTIONS[number];
 export type Mode = 'PARTY' | 'REMOTE';
 export type Phase = 'lobby' | 'submit' | 'reveal' | 'vote' | 'result';
 export interface Player { id: string; name: string; score: number; connected: boolean }
 export interface Photo { id: string; ownerId: string }
-export interface Game { phase: Phase; mode: Mode; round: number; roundId: string; prompt: string; pack: PackLabel | null; players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null; revealIndex: number }
-export const createGame = (hostName: string, mode: Mode): Game => ({phase: 'lobby', mode, round: 0, roundId: '', prompt: '', pack: null, players: [{id: 'host', name: hostName, score: 0, connected: true}], photos: [], votes: {}, winnerId: null, revealIndex:-1});
+export interface Game { phase: Phase; mode: Mode; roundLimit: RoundLimit; round: number; roundId: string; prompt: string; pack: PackLabel | null; players: Player[]; photos: Photo[]; votes: Record<string, string>; winnerId: string | null; revealIndex: number }
+export const createGame = (hostName: string, mode: Mode, roundLimit:RoundLimit=5): Game => ({phase: 'lobby', mode, roundLimit, round: 0, roundId: '', prompt: '', pack: null, players: [{id: 'host', name: hostName, score: 0, connected: true}], photos: [], votes: {}, winnerId: null, revealIndex:-1});
 export function joinPlayer(game: Game, player: Player): Game {
   if (game.phase !== 'lobby' || game.players.length >= 10 || game.players.some(p => p.id === player.id)) throw new Error('Beitritt nur in der Lobby mit maximal 10 Personen.');
   return {...game, players: [...game.players, player]};
 }
 export function nextRound(game: Game, packs: string[], used: string[], random = Math.random): Game {
   if (!['lobby', 'result'].includes(game.phase) || game.players.filter(p => p.connected).length < 2) throw new Error('Es braucht mindestens zwei verbundene Spieler.');
+  if(game.round>=game.roundLimit)throw new Error('Die Partie ist beendet. Startet eine Revanche in der Lobby.');
   const selected = pickPrompt(packs, used, random);
   return {...game, phase: 'submit', round: game.round + 1, roundId: crypto.randomUUID(), prompt: selected.text, pack: selected.pack, photos: [], votes: {}, winnerId: null, revealIndex:-1};
 }
@@ -70,9 +73,23 @@ export function viewFor(game: Game, viewerId: string): Game {
 }
 
 /** Only already-public information is eligible for the display control path. */
-export type PublicDisplayState = Pick<Game,'phase'|'mode'|'round'|'roundId'|'prompt'|'pack'|'players'|'winnerId'|'revealIndex'> & {photos:Photo[];countdown:number};
+export type PublicDisplayState = Pick<Game,'phase'|'mode'|'roundLimit'|'round'|'roundId'|'prompt'|'pack'|'players'|'winnerId'|'revealIndex'> & {photos:Photo[];countdown:number};
 export function displayView(game:Game,countdown=0):PublicDisplayState {
-  return {countdown,phase:game.phase,mode:game.mode,round:game.round,roundId:game.roundId,prompt:game.prompt,pack:game.pack,
+  return {countdown,phase:game.phase,mode:game.mode,roundLimit:game.roundLimit,round:game.round,roundId:game.roundId,prompt:game.prompt,pack:game.pack,
     players:game.players.map((p,i)=>({...p,id:`player-${i}`})),winnerId:game.winnerId?`player-${game.players.findIndex(p=>p.id===game.winnerId)}`:null,revealIndex:visiblePhotos(game).length?game.revealIndex:-1,
     photos:visiblePhotos(game).map(p=>({id:p.id,ownerId:'hidden'}))};
+}
+
+export const isMatchOver=(game:Game)=>game.phase==='result'&&game.round>=game.roundLimit;
+export function leaderboard(game:Game){
+ const players=[...game.players].sort((a,b)=>b.score-a.score);
+ return players.map(player=>({...player,rank:players.findIndex(p=>p.score===player.score)+1}));
+}
+export function setRoundLimit(game:Game,limit:RoundLimit):Game{
+ if(game.phase!=='lobby'||game.round!==0||!ROUND_OPTIONS.includes(limit))throw new Error('Rundenzahl nur vor der Partie ändern.');
+ return {...game,roundLimit:limit};
+}
+export function rematch(game:Game):Game{
+ if(!isMatchOver(game))throw new Error('Die Partie läuft noch.');
+ return {...createGame(game.players[0].name,game.mode,game.roundLimit),players:game.players.map(p=>({...p,score:0}))};
 }

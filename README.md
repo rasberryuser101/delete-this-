@@ -1,6 +1,6 @@
-# Delete This! 📸
+# Delete That!
 
-**Version 6.2:** automatische pausierbare Foto-Show, kompakte Pack-Auswahl, Musik zunächst aus, Ablehnung ohne dauerhafte Gerätesperre, verstärkte Freigabe- und Relay-Limits. [Einfache Anleitung zu Verbrauch, Dashboard, Sicherheitsgrenzen und Betreiberpflichten](docs/BETRIEB.md).
+**Version 6.3:** 3/5/10 Runden, Gesamtrangliste und Revanche, Musik je Spielphase, austauschbare Audio-Dateien und eigene SVG-Platzhalter. **[Einfache Anleitung: Sounds, Grafiken, Einstellungen und GitHub-Dateien verwalten](docs/ANPASSEN.md).** [Einfache Anleitung zu Verbrauch, Dashboard, Sicherheitsgrenzen und Betreiberpflichten](docs/BETRIEB.md).
 
 Ein deutsches Foto-Partyspiel für 2–10 Personen. Die App besteht aus React/TypeScript, einem kleinen Cloudflare Worker für die Lobby und kurzlebige TURN-Zugänge sowie Cloudflare Static Assets für die Website. **Fotos werden ausschließlich auf den Geräten verarbeitet und über WebRTC-DataChannels ausgetauscht.** Cloudflare sieht kleine Lobby- und Spielnachrichten; bei blockierten Direktverbindungen leitet Cloudflare TURN die *verschlüsselten* WebRTC-Pakete weiter. Es gibt keine Foto-Uploads, KI, Analytics oder Foto-Datenbank.
 

@@ -1,11 +1,12 @@
 import { AdmissionGate, APPROVAL_MS, peerCheck, type JoinRequest } from './admission';
-import { allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, nextReveal, reveal, submitPhoto, displayView, viewFor, visiblePhotos, type Game, type Mode } from './game';
+import { isMatchOver, setRoundLimit, rematch, type RoundLimit, allSubmitted, castVote, createGame, disconnectPlayer, joinPlayer, nextRound, nextReveal, reveal, submitPhoto, displayView, viewFor, visiblePhotos, type Game, type Mode } from './game';
 import { processImage } from './image';
 import { PhotoStore } from './photoStore';
 import { decodeMessage, encodeMessage, type WireMessage } from './protocol';
 import { CONNECTION_ERROR, JOIN_TIMEOUT_MS, NETWORK_ERROR, createLobbySession, makeRoomCode, normalizeRoomCode, type LobbySession, type LobbyOptions } from './room';
 import { parsePhotoMetadata, receivePhoto, transferPhoto, withDeadline, type PhotoMetadata } from './transfer';
 import { play, type Sound } from './sound';
+import { CUSTOM } from './customization';
 import { isReaction, type Reaction } from './party';
 
 type Stage = 'idle'|'search'|'approval'|'connecting'|'connected'|'error';
@@ -73,7 +74,7 @@ export class GameController {
     this.patch({game,countdown:0});
     for(const player of game.players) if(player.id!=='host'&&player.connected) void this.sync(player.id).catch(()=>{});
     for(const [id,d] of this.displays)if(d.connected)void this.sync(id).catch(()=>{});
-    if(game.phase==='result'&&previous?.phase!=='result') this.deps.sound('winner');
+    if(game.phase==='result'&&previous?.phase!=='result') this.deps.sound(isMatchOver(game)?'gameover':'winner');
   }
   create = async (name:string, mode:Mode) => {
     let epoch=this.epoch;
@@ -181,15 +182,17 @@ export class GameController {
       if(msg.type==='display-sync'){
         if(this.state.role!=='DISPLAY')throw new Error('Falsche Ansicht.');
         if(this.state.game?.roundId!==msg.state.roundId||msg.state.phase==='result')this.clearPhotos();
+        const previous=this.state.game;
         const {countdown,...publicGame}=msg.state;
         this.patch({game:{...publicGame,votes:{}},you:this.session!.selfId,online:true,status:'',countdown});
+        if(previous?.phase!==publicGame.phase){if(publicGame.phase==='reveal')this.deps.sound('drumroll');if(publicGame.phase==='vote')this.deps.sound('voting');if(publicGame.phase==='result')this.deps.sound(publicGame.round>=publicGame.roundLimit?'gameover':'winner');}
       } else if(msg.type==='sync') {
         if(this.state.role==='DISPLAY')throw new Error('Privater Spielstand nicht für Displays.');
         if(msg.you!==this.session?.selfId)throw new Error('Spielerzuordnung ungültig.');
         const previous=this.state.game;
         if(previous?.roundId!==msg.game.roundId||msg.game.phase==='result')this.clearPhotos();
         this.patch({game:msg.game,you:msg.you,online:true,status:'',...(previous?.roundId!==msg.game.roundId?{countdown:0}:{})});
-        if(previous?.phase!==msg.game.phase) {if(msg.game.phase==='submit')this.deps.sound('prompt');if(msg.game.phase==='reveal')this.deps.sound('drumroll');if(msg.game.phase==='vote')this.deps.sound('voting');if(msg.game.phase==='result')this.deps.sound('winner');}
+        if(previous?.phase!==msg.game.phase) {if(msg.game.phase==='submit')this.deps.sound('prompt');if(msg.game.phase==='reveal')this.deps.sound('drumroll');if(msg.game.phase==='vote')this.deps.sound('voting');if(msg.game.phase==='result')this.deps.sound(isMatchOver(msg.game)?'gameover':'winner');}
         if(msg.game.phase==='reveal'&&msg.game.revealIndex>=0&&previous?.revealIndex!==msg.game.revealIndex&&(msg.game.mode==='PARTY'||this.photos.getBlob(msg.game.photos[msg.game.revealIndex].id)))this.deps.sound('camera');
       } else if(msg.type==='countdown') {this.patch({countdown:msg.value});if(msg.value)this.deps.sound('countdown');}
       else if(msg.type==='reaction') {if(msg.roundId===this.state.game?.roundId&&['reveal','vote'].includes(this.state.game.phase))this.showReaction(msg.emoji);}
@@ -251,13 +254,13 @@ export class GameController {
   };
   private showReveal() {
     const game=this.state.game;if(!game||game.phase!=='submit')return;
-    this.publish(reveal(game));this.deps.sound('drumroll');this.patch({status:''});this.scheduleReveal(4500);
+    this.publish(reveal(game));this.deps.sound('drumroll');this.patch({status:''});this.scheduleReveal(CUSTOM.show.introMs);
   }
   setAutoReveal = (enabled:boolean) => {
     this.patch({autoReveal:enabled});clearTimeout(this.revealTimer);
     if(enabled)this.scheduleReveal();
   };
-  private scheduleReveal(delay=6500) {
+  private scheduleReveal(delay=CUSTOM.show.photoMs) {
     clearTimeout(this.revealTimer);
     if(this.state.role!=='HOST'||!this.state.autoReveal||this.state.game?.phase!=='reveal')return;
     const epoch=this.epoch;
@@ -324,6 +327,14 @@ export class GameController {
     this.patch({busy:true});
     try {if(this.state.role==='HOST')this.publish(castVote(game,'host',id));else await this.send(this.host,{type:'vote',photoId:id,roundId:game.roundId});this.deps.sound('vote');}
     catch(e){if(epoch===this.epoch)this.fail(e);}finally{if(epoch===this.epoch)this.patch({busy:false});}
+  };
+  chooseRounds = (limit:RoundLimit) => {
+    if(this.state.role!=='HOST'||!this.state.game||this.state.countdown)return;
+    try{this.publish(setRoundLimit(this.state.game,limit));}catch(e){this.fail(e);}
+  };
+  rematch = () => {
+    if(this.state.role!=='HOST'||!this.state.game)return;
+    try{this.used=[];this.clearPhotos();this.publish(rematch(this.state.game));this.patch({status:'Neue Partie, neue Ausreden.',error:'',autoReveal:true});}catch(e){this.fail(e);}
   };
   begin = (packs:string[]) => {
     const game=this.state.game;if(!game||this.state.role!=='HOST'||this.state.countdown)return;

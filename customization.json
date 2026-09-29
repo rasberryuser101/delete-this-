@@ -1,0 +1,56 @@
+{
+  "brand": "Delete That!",
+  "tagline": "Eure Fotos. Euer Chaos.",
+  "theme": {
+    "accent": "#f22882",
+    "ink": "#17111e"
+  },
+  "show": {
+    "introMs": 4500,
+    "photoMs": 6500
+  },
+  "audio": {
+    "musicVolume": 0.35,
+    "effectsVolume": 0.65,
+    "music": {
+      "lobby": "media/music/lobby.mp3",
+      "submit": "media/music/submit.mp3",
+      "reveal": "media/music/reveal.mp3",
+      "vote": "media/music/vote.mp3",
+      "result": "media/music/result.mp3",
+      "finale": "media/music/finale.mp3"
+    },
+    "effects": {
+      "button": "media/sfx/button.mp3",
+      "connected": "media/sfx/connected.mp3",
+      "prompt": "media/sfx/prompt.mp3",
+      "countdown": "media/sfx/countdown.mp3",
+      "submit": "media/sfx/submit.mp3",
+      "reveal": "media/sfx/reveal.mp3",
+      "vote": "media/sfx/vote.mp3",
+      "winner": "media/sfx/winner.mp3",
+      "gameover": "media/sfx/gameover.mp3",
+      "error": "media/sfx/error.mp3",
+      "drumroll": "media/sfx/drumroll.mp3",
+      "camera": "media/sfx/camera.mp3",
+      "voting": "media/sfx/voting.mp3",
+      "reaction": "media/sfx/reaction.mp3"
+    }
+  },
+  "art": {
+    "camera": "media/art/camera.svg",
+    "drum": "media/art/drum.svg",
+    "curtain": "media/art/curtain.svg",
+    "trophy": "media/art/trophy.svg",
+    "ticket": "media/art/ticket.svg",
+    "avatars": [
+      "media/art/avatars/01.svg",
+      "media/art/avatars/02.svg",
+      "media/art/avatars/03.svg",
+      "media/art/avatars/04.svg",
+      "media/art/avatars/05.svg",
+      "media/art/avatars/06.svg"
+    ]
+  },
+  "credits": []
+}

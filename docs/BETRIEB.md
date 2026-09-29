@@ -1,4 +1,4 @@
-# Delete This! betreiben – ohne Fachchinesisch
+# Delete That! betreiben – ohne Fachchinesisch
 
 Stand: 29.09.2026. Die Beträge sind Cloudflares öffentliche Listenwerte. Dein tatsächlich gebuchter Tarif und andere Projekte im selben Konto zählen mit. Dieses Repository kann deinen Kontostand nicht lesen.
 
@@ -62,7 +62,7 @@ Freigegebene Mitspieler können Bilder kopieren. Wer den Host, das Gerät, den G
 
 ## Finale Oberfläche und Betreiberangaben
 
-- Musik zunächst aus; 🎼 schaltet leise Hintergrundmusik ein, 🔊/🔇 schaltet alle Töne.
+- Musik zunächst aus; 🎼 schaltet die zur Spielphase passende Musik ein, 🔊/🔇 schaltet alle Töne.
 - Prompt und kurzer Vorhang, dann automatische Foto-Show: erstes Foto nach 4,5 s, danach mindestens 6,5 s pro Foto nach bestätigter Übertragung. Pausieren und manuelles Weiter möglich. Bei fehlenden Fotos pausiert sie; bei getrennten Geräten wartet sie.
 - Packs sind kompakte Schalter. Weitere `src/packs/*.json` erscheinen weiterhin automatisch beim Build.
 - Diagnose nur mit `?debug=1` **vor** dem Hash: `https://deine-url/?debug=1#/spiel`. Kein geheimer Administrationszugang, nur eine lokale Statusanzeige. Secrets und Fotos werden dort nicht angezeigt.
@@ -83,3 +83,5 @@ Freigegebene Mitspieler können Bilder kopieren. Wer den Host, das Gerät, den G
 - https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
 - https://www.oesterreich.gv.at/de/themen/onlinesicherheit_internet_und_neue_medien/internet_und_handy___sicher_durch_die_digitale_welt/Seite.1720902
 - https://www.cloudflare.com/cloudflare-customer-dpa/
+
+Eigene Medien, Showtempo und Gestaltung: [Anleitung](ANPASSEN.md). Seit Version 6.3: 3/5/10 Runden mit Gesamtwertung und Revanche.
