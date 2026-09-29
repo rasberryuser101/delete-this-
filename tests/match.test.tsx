@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createGame,joinPlayer,nextRound,submitPhoto,reveal,nextReveal,castVote,isMatchOver,leaderboard,rematch,setRoundLimit,displayView,viewFor,type RoundLimit } from '../src/game';
 import { validateMessage } from '../src/protocol';
 import { Leaderboard } from '../src/Leaderboard';
-import { musicScene,mediaUrl,avatarPath } from '../src/customization';
+import { CUSTOM, musicScene,mediaUrl,avatarPath } from '../src/customization';
+it('verwendet nur drei Hintergrundmusik-Phasen',()=>{expect(Object.keys(CUSTOM.audio.music)).toEqual(['lobby','submit','finale']);});
 it.each([3,5,10] as RoundLimit[])('beendet nach genau %i Runden, verteilt Punkte und startet eine Revanche',limit=>{
  let game=setRoundLimit(joinPlayer(createGame('Host','REMOTE'),{id:'guest',name:'Gast',score:0,connected:true}),limit);
  expect(musicScene(game)).toBe('lobby');

@@ -2,7 +2,7 @@ import config from '../customization.json';
 import type { Game } from './game';
 import { isMatchOver } from './game';
 export const CUSTOM = config;
-// Only assets shipped with the app are eligible. Missing optional audio uses synthesis.
+// Only assets shipped with the app are eligible. Missing optional audio stays silent.
 const files = import.meta.glob<string>('../public/media/**/*.{mp3,ogg,wav,svg,png,webp,jpg,jpeg}', {eager:true,query:'?url',import:'default'});
 export function mediaUrl(path:string):string|undefined {
   if(!/^media\/[a-zA-Z0-9_./-]+$/.test(path)||path.includes('..'))return undefined;

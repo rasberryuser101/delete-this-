@@ -20,7 +20,7 @@ for(const path of [c.art.camera,c.art.drum,c.art.curtain,c.art.trophy,c.art.tick
  check(existsSync(join('public',path)),`Grafik fehlt: public/${path}`);
  check(statSync(join('public',path)).size<=2_000_000,`Grafik ${path}: maximal 2 MB.`);
 }
-console.log('Branding, Show, Audio-Einstellungen und Grafiken geprüft. Fehlende optionale Audiodateien verwenden lokale Ersatzklänge.');
+console.log('Branding, Show, Audio-Einstellungen und Grafiken geprüft. Musik wird nur aus den konfigurierten Dateien geladen.');
 
 check(Array.isArray(c.credits)&&c.credits.length<=50,'credits: Liste mit höchstens 50 Nachweisen.');
 for(const credit of c.credits){for(const key of ['title','author','license'])check(typeof credit[key]==='string'&&credit[key].length>0&&credit[key].length<=200,`Nachweis: ${key} fehlt oder ist zu lang.`);check(typeof credit.url==='string'&&/^https:\/\/[^\s]+$/.test(credit.url),'Nachweis braucht einen HTTPS-Link.');}

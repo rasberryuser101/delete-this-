@@ -41,11 +41,11 @@ Es gibt nur diese drei Musikphasen. Präsentation, Voting und Rundenergebnis ver
 4. Nachricht wie „Neue Lobby-Musik“, direkt auf `cloudflare-migration` speichern.
 5. Nach erfolgreichem Build die Website neu laden und Musik einschalten.
 
-Die Datei wird beim Build erkannt. Du musst dafür keinen Programmcode ändern. Noch keine Dateien? Dann verwenden Lobby, Fotoauswahl und Finale lokale Synthesizer-Ersatzmusik. Musik bleibt zunächst aus, damit sie nicht ungefragt auf jedem Handy läuft. Bei einer Party reicht es, sie auf dem Host oder einem Display einzuschalten; auf den Gästehandys kann sie ausgeschaltet bleiben.
+Die Datei wird beim Build erkannt. Du musst dafür keinen Programmcode ändern. Musik bleibt zunächst aus, damit sie nicht ungefragt auf jedem Handy läuft. Bei einer Party reicht es, sie auf dem Host oder einem Display einzuschalten; auf den Gästehandys kann sie ausgeschaltet bleiben. Die Dateien werden direkt gestreamt und die nächsten Tracks nach dem Start im Hintergrund vorbereitet. Fehlt ein Track oder kann er nicht geladen werden, bleibt nur diese Phase stumm.
 
-Empfehlung: ein sauber geschnittener Loop mit 15–60 Sekunden, MP3 mit 128–192 kbit/s. Grenze: 8 MB und 120 Sekunden pro Musikdatei. Ein langer Titel wird nicht durch bloßes Umbenennen kürzer. Die App wiederholt die Datei; für einen nahtlosen Übergang muss ihr Anfang zum Ende passen. Lautstärke vor dem Hochladen normalisieren.
+Empfehlung: ein sauber geschnittener Loop mit 15–120 Sekunden, MP3 mit 128–192 kbit/s. Grenze: 8 MB pro Musikdatei. Die App streamt und wiederholt die Datei; für einen nahtlosen Übergang muss ihr Anfang zum Ende passen. Lautstärke vor dem Hochladen normalisieren.
 
-MP3 funktioniert gut über Geräte hinweg. WAV und OGG sind ebenfalls konfigurierbar, können aber größer sein bzw. vom Browser abhängen. Dafür den Pfad in `customization.json` passend ändern. Fehlende oder nicht abspielbare Sounds verwenden Ersatzklänge und blockieren das Spiel nicht.
+MP3 funktioniert gut über Geräte hinweg. WAV und OGG sind ebenfalls konfigurierbar, können aber größer sein bzw. vom Browser abhängen. Dafür den Pfad in `customization.json` passend ändern. Fehlende oder nicht abspielbare Musikdateien bleiben stumm und blockieren das Spiel nicht. Die kurzen Soundeffekte behalten weiterhin ihre lokalen Web-Audio-Ersatzsignale.
 
 ## Soundeffekte
 
