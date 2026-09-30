@@ -1,12 +1,12 @@
 import { makeIdentity, storedIdentity, verifyIdentity, type DeviceIdentity, type Role } from './identity';
 import { parseNetwork, type NetworkControl } from './networkProtocol';
-import { decodeMessage, encodeMessage } from './protocol';
 import { PhotoChannel } from './photoChannel';
+import { ControlChannel } from './controlChannel';
 import { withDeadline, type PhotoAction, type PhotoMetadata } from './transfer';
 import type { RequestAction } from './actions';
 export { parsePhotoMetadata } from './transfer';
 
-export const BUILD = '7.1.0';
+export const BUILD = '7.2.0';
 export const CONNECTION_ERROR = 'Lobby nicht gefunden oder Verbindung fehlgeschlagen. Link prüfen und erneut versuchen.';
 export const NETWORK_ERROR = 'Verbindung fehlgeschlagen. Internet prüfen und erneut versuchen.';
 export const HOST_CONNECTION_ERROR = 'Die Lobby konnte nicht geöffnet werden. Internet-/VPN-/Inhaltsblocker-Einstellungen prüfen und erneut versuchen.';
@@ -61,7 +61,7 @@ export function parseHandshake(value: unknown): LobbyHandshake | null {
   return v.version === 5 && ['HOST', 'PLAYER', 'DISPLAY'].includes(v.role) && (v.role === 'HOST' || (typeof v.name === 'string' && v.name.trim().length > 0 && v.name.length <= 30)) ? v : null;
 }
 type Signal = { type: 'OFFER' | 'ANSWER'; sdp: string; signature:string } | { type: 'ICE'; candidate: RTCIceCandidateInit } | { type: 'RESTART' | 'CHANNEL_READY' };
-type Incoming = { type: 'welcome'; id: string; hostToken?: string } | { type: 'peer-joined' | 'peer-left'; id: string } | { type: 'route'; from: string; data: unknown } | { type: 'turn'; iceServers: RTCIceServer[] } | { type: 'error'; message: string };
+type Incoming = { type: 'welcome'; id: string; hostToken?: string; accessToken?: string } | { type: 'peer-joined' | 'peer-left'; id: string } | { type: 'route'; from: string; data: unknown } | { type: 'error'; message: string };
 type Binding = { id: string; key: string; role: Role; remoteId: string; online: boolean };
 const signalData = (raw: unknown): Signal | null => {
   if (!raw || typeof raw !== 'object') return null;
@@ -95,9 +95,10 @@ export class CloudflareLobby {
   private hostKey = '';
   private hostToken = '';
   private ice: RTCIceServer[] = STUN;
-  private turnReady: Promise<void> = Promise.resolve();
-  private turnResolve: (() => void) | null = null;
-  private turnTimer: ReturnType<typeof setTimeout> | undefined;
+  private accessToken = '';
+  private turnRequest: Promise<void> | null = null;
+  private turnAbort: AbortController | undefined;
+  private turnExpires = 0;
   private turnStatus = 'wird geprüft';
   private remoteReady = new Set<string>();
   private localReady = new Set<string>();
@@ -107,30 +108,19 @@ export class CloudflareLobby {
   private pcs = new Map<string, RTCPeerConnection>();
   private candidates = new Map<string, RTCIceCandidateInit[]>();
   private transports = new Map<string, PhotoChannel>();
-  private pending = new Map<string, { remote: string; resolve: () => void; reject: () => void; timer: ReturnType<typeof setTimeout> }>();
+  private controls = new Map<string, ControlChannel>();
   private admitting = new Set<string>();
   private blocked = new Set<string>();
   private closed = false;
   private health: ReturnType<typeof setInterval> | undefined;
   private lastRestart = new Map<string, number>();
-  private lastTurnRequest = 0;
-  private readonly abort = new AbortController();
   private connecting: Promise<void> | null = null;
   constructor(private options: LobbyOptions, private identity: DeviceIdentity) {
     this.session = { selfId: identity.id, publicKey: identity.publicKey,
       control: { onRequest: null, request: async (data, opts) => {
-        const message = decodeMessage(data), binding = this.bindings.get(opts.target);
-        if (!message || !binding?.online) throw new Error('Nicht freigegeben oder getrennt.');
-        const requestId = crypto.randomUUID();
-        await new Promise<void>((resolve, reject) => {
-          const done = (ok: boolean) => { clearTimeout(timer); opts.signal?.removeEventListener('abort', cancel); this.pending.delete(requestId); if (ok) resolve(); else reject(new Error('Keine Antwort. Bitte erneut versuchen.')); };
-          const cancel = () => done(false);
-          const timer = setTimeout(cancel, opts.timeoutMs ?? 10_000);
-          this.pending.set(requestId, { remote: binding.remoteId, resolve: () => done(true), reject: cancel, timer });
-          opts.signal?.addEventListener('abort', cancel, { once: true });
-          if (opts.signal?.aborted) cancel(); else try { this.route(binding.remoteId, { type: 'CONTROL', requestId, message }); } catch { cancel(); }
-        });
-        return { ok: true };
+        const binding = this.bindings.get(opts.target), transport = binding && this.controls.get(binding.remoteId);
+        if (!binding?.online || !transport) throw new Error('Nicht freigegeben oder getrennt.');
+        return transport.request(data, opts);
       } },
       photo: { onRequest: null, request: (data, opts) => {
         const binding = this.bindings.get(opts.target), transport = binding && this.transports.get(binding.remoteId);
@@ -174,21 +164,12 @@ export class CloudflareLobby {
         let msg: Incoming; try { msg = JSON.parse(event.data) as Incoming; } catch { return; }
         if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
         if (msg.type === 'welcome' && typeof msg.id === 'string') {
-          welcomed = true; clearTimeout(timer); this.selfRemote = msg.id;
+          welcomed = true; clearTimeout(timer); const previousRemote = this.selfRemote; this.selfRemote = msg.id;
+          if (previousRemote && previousRemote !== msg.id) { this.turnAbort?.abort(); this.turnRequest = null; }
           if (msg.hostToken) this.hostToken = msg.hostToken;
-          this.turnReady = new Promise<void>(done => { this.turnResolve = done; });
-          if (this.options.role === 'HOST') this.requestTurn();
+          this.accessToken = msg.accessToken || '';
           resolve();
         } else if (msg.type === 'error') { if (!welcomed) { failed = true; clearTimeout(timer); reject(new Error(typeof msg.message === 'string' && msg.message ? msg.message : NETWORK_ERROR)); } else this.options.onStatus?.(msg.message || NETWORK_ERROR); }
-        else if (welcomed && msg.type === 'turn') {
-          clearTimeout(this.turnTimer);
-          if (validIce(msg.iceServers)) {
-            this.ice = msg.iceServers;
-            this.turnStatus = this.ice.some(s => /turns?:/.test(String(s.urls))) ? 'Zugang erhalten' : 'kein Relay-Zugang';
-            for (const pc of this.pcs.values()) if (pc.connectionState !== 'closed') try { pc.setConfiguration({ iceServers: this.ice }); } catch { this.options.onStatus?.('Verbindung konnte nicht aktualisiert werden.'); }
-          }
-          this.turnResolve?.(); this.turnResolve = null;
-        }
         else if (welcomed && msg.type === 'peer-joined' && typeof msg.id === 'string') { if (this.options.role === 'HOST') void this.announce(msg.id); }
         else if (welcomed && msg.type === 'peer-left' && typeof msg.id === 'string') this.left(msg.id);
         else if (welcomed && msg.type === 'route' && typeof msg.from === 'string') void this.handle(msg.from, msg.data).catch(() => {
@@ -196,7 +177,7 @@ export class CloudflareLobby {
         });
       };
       ws.onerror = fail;
-      ws.onclose = () => { if (this.ws !== ws || this.closed) return; clearTimeout(timer); if (!welcomed) { fail(); return; } this.turnResolve?.(); this.turnResolve = null; for (const remote of this.pcs.keys()) this.left(remote); this.options.onStatus?.('Verbindung unterbrochen. Wiederverbinden …'); };
+      ws.onclose = () => { if (this.ws !== ws || this.closed) return; clearTimeout(timer); if (!welcomed) { fail(); return; } for (const remote of this.pcs.keys()) this.left(remote); this.options.onStatus?.('Verbindung unterbrochen. Wiederverbinden …'); };
     });
   }
   private async announce(remote: string) {
@@ -237,25 +218,18 @@ export class CloudflareLobby {
     if (msg?.type === 'APPROVED' && this.options.role !== 'HOST' && remote === this.hostRemote && msg.id === this.identity.id && msg.role === this.options.role) {
       this.admitting.delete(remote); this.options.onStage?.('connecting', 'host');
       this.bindings.set('host', { id: 'host', key: this.hostKey, role: 'HOST', remoteId: remote, online: false }); this.remoteIds.set(remote, 'host');
-      this.requestTurn(); return;
+      return;
     }
     if (msg?.type === 'DENIED' && remote === this.hostRemote) { this.options.onJoinError?.('host', 'Der Host hat die Anfrage abgelehnt.'); return; }
     const id = this.remoteIds.get(remote), binding = id && this.bindings.get(id);
     if (!binding || binding.remoteId !== remote) return;
-    if (msg?.type === 'ACK') { const pending = this.pending.get(msg.requestId); if (pending?.remote === remote) { if (msg.ok) pending.resolve(); else pending.reject(); } return; }
-    if (msg?.type === 'CONTROL') {
-      if (!binding.online) return;
-      let ok = false;
-      try { await this.session.control.onRequest?.(encodeMessage(msg.message), { peerId: id, signal: this.abort.signal }); ok = true; } catch { /* Invalid game control is never acknowledged as valid. */ }
-      this.route(remote, { type: 'ACK', requestId: msg.requestId, ok }); return;
-    }
     const signal = signalData(data);
     if (!signal) return;
     if ((signal.type==='OFFER'||signal.type==='ANSWER') && !await verifyIdentity(binding.key,signal.signature,this.signalProof(signal.type,signal.sdp,remote,this.selfRemote))) return;
     if (signal.type === 'CHANNEL_READY') { this.remoteReady.add(remote); this.confirmPeer(remote); return; }
     if (signal.type === 'RESTART' && this.options.role === 'HOST') { await this.restart(remote); return; }
     if (signal.type === 'OFFER' && this.options.role !== 'HOST') {
-      await this.turnReady;
+      await this.ensureTurn();
       if (this.closed || !this.remoteIds.has(remote)) return;
       const pc = this.newPeer(remote);
       await pc.setRemoteDescription({ type: 'offer', sdp: signal.sdp });
@@ -293,16 +267,34 @@ export class CloudflareLobby {
   }
   private async openPeer(remote: string) {
     if (this.options.role !== 'HOST') return;
-    await this.turnReady;
+    await this.ensureTurn();
     if (this.closed || !this.remoteIds.has(remote)) return;
     const pc = this.newPeer(remote);
+    this.bindChannel(remote, pc.createDataChannel('game-control', { ordered: true }));
     this.bindChannel(remote, pc.createDataChannel('photo-transfer', { ordered: true }));
     await pc.setLocalDescription(await pc.createOffer());
     await this.sendDescription(remote,'OFFER',pc);
   }
   private bindChannel(remote: string, channel: RTCDataChannel) {
     const id = this.remoteIds.get(remote), binding = id && this.bindings.get(id);
-    if (!binding || channel.label !== 'photo-transfer' || channel.ordered !== true || channel.maxRetransmits !== null || channel.maxPacketLifeTime !== null || this.transports.has(remote)) { channel.close(); return; }
+    if (!binding || !['photo-transfer', 'game-control'].includes(channel.label) || channel.ordered !== true || channel.maxRetransmits !== null || channel.maxPacketLifeTime !== null || (channel.label === 'photo-transfer' ? this.transports.has(remote) : this.controls.has(remote))) { channel.close(); return; }
+    if (channel.label === 'game-control') {
+      const control: ControlChannel = new ControlChannel(channel, id, () => {
+        const b = this.bindings.get(id);
+        return !this.closed && !!b && b.remoteId === remote && this.controls.get(remote) === control && (b.online || this.localReady.has(remote));
+      }, async (data, context) => {
+        // RTC and signalling are different transports: a first authenticated
+        // control can overtake CHANNEL_READY. It proves the remote is ready.
+        this.remoteReady.add(remote); this.confirmPeer(remote);
+        if (!this.bindings.get(id)?.online || !this.session.control.onRequest) throw new Error('Nicht freigegeben.');
+        return this.session.control.onRequest(data, context);
+      }, this.options.role === 'HOST' ? 240 : 1600);
+      this.controls.set(remote, control);
+      channel.addEventListener('open', () => this.channelsReady(remote));
+      channel.addEventListener('close', () => { if (this.controls.get(remote) === control) { this.setOffline(remote); this.controls.delete(remote); } });
+      if (channel.readyState === 'open') this.channelsReady(remote);
+      return;
+    }
     const transport: PhotoChannel = new PhotoChannel(channel, id, (direction, meta, visibility) => {
       const b = this.bindings.get(id);
       return !!b?.online && b.remoteId === remote && this.transports.get(remote) === transport && this.options.canPhoto?.(id, direction, meta, visibility) === true;
@@ -310,23 +302,26 @@ export class CloudflareLobby {
     this.transports.set(remote, transport);
     const open = () => {
       if (this.transports.get(remote) !== transport || this.closed || binding.online) return;
-      this.localReady.add(remote); this.route(remote, { type: 'CHANNEL_READY' }); this.confirmPeer(remote);
+      this.channelsReady(remote);
     };
     channel.addEventListener('open', open);
     channel.addEventListener('close', () => { if (this.transports.get(remote) === transport) { this.setOffline(remote); transport.close(); this.transports.delete(remote); } });
     if (channel.readyState === 'open') open();
   }
+  private channelsReady(remote: string) {
+    if (this.closed || this.localReady.has(remote) || this.controls.get(remote)?.channel.readyState !== 'open' || this.transports.get(remote)?.channel.readyState !== 'open') return;
+    this.localReady.add(remote); this.route(remote, { type: 'CHANNEL_READY' }); this.confirmPeer(remote);
+  }
   private confirmPeer(remote: string) {
     const id = this.remoteIds.get(remote), binding = id && this.bindings.get(id);
-    if (!binding || binding.online || this.closed || !this.localReady.has(remote) || !this.remoteReady.has(remote) || this.transports.get(remote)?.channel.readyState !== 'open') return;
+    if (!binding || binding.online || this.closed || !this.localReady.has(remote) || !this.remoteReady.has(remote) || this.transports.get(remote)?.channel.readyState !== 'open' || this.controls.get(remote)?.channel.readyState !== 'open') return;
     binding.online = true; this.options.onStatus?.('Verbunden'); this.session.room.onPeerJoin?.(id);
   }
   private setOffline(remote: string) {
     const id = this.remoteIds.get(remote), b = id ? this.bindings.get(id) : undefined;
     if (b?.online && id) { b.online = false; this.session.room.onPeerLeave?.(id); }
-    for (const p of [...this.pending.values()]) if (p.remote === remote) p.reject();
   }
-  private dropPeer(remote: string) { this.setOffline(remote); this.localReady.delete(remote); this.remoteReady.delete(remote); this.peerStarted.delete(remote); const t = this.transports.get(remote); this.transports.delete(remote); t?.close(); const pc = this.pcs.get(remote); this.pcs.delete(remote); pc?.close(); }
+  private dropPeer(remote: string) { this.setOffline(remote); this.localReady.delete(remote); this.remoteReady.delete(remote); this.peerStarted.delete(remote); const control = this.controls.get(remote); this.controls.delete(remote); control?.close(); const t = this.transports.get(remote); this.transports.delete(remote); t?.close(); const pc = this.pcs.get(remote); this.pcs.delete(remote); pc?.close(); }
   private left(remote: string) {
     this.dropPeer(remote);
     const id = this.remoteIds.get(remote); this.remoteIds.delete(remote); this.candidates.delete(remote);
@@ -342,27 +337,39 @@ export class CloudflareLobby {
     if (this.options.role === 'HOST') try { await this.openPeer(remote); } catch { /* next health check retries */ }
     else try { this.route(remote, { type: 'RESTART' }); } catch { /* reconnect will retry */ }
   }
-  private requestTurn() {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
-    this.lastTurnRequest = Date.now();
-    this.ws.send(JSON.stringify({ type: 'turn' }));
-    clearTimeout(this.turnTimer);
-    this.turnTimer = setTimeout(() => { this.turnStatus = 'keine Antwort'; this.turnResolve?.(); this.turnResolve = null; this.options.onStatus?.('Verbindung dauert länger. Ein anderer Weg wird versucht …'); }, 12_000);
+  private ensureTurn(): Promise<void> {
+    if (Date.now() < this.turnExpires || this.closed) return Promise.resolve();
+    if (this.turnRequest) return this.turnRequest;
+    const id = this.selfRemote, token = this.accessToken;
+    const abort = new AbortController(); this.turnAbort = abort;
+    const task = withDeadline(async signal => {
+      const response = await fetch(new URL('/api/turn', location.origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', signal, body: JSON.stringify({ code: this.options.code, id, token }) });
+      if (!response.ok) throw new Error('TURN nicht verfügbar.');
+      const data = await response.json() as { iceServers?: unknown; expiresIn?: number };
+      if (!validIce(data.iceServers)) throw new Error('TURN-Antwort ungültig.');
+      if (this.closed || id !== this.selfRemote) return;
+      this.ice = data.iceServers;
+      this.turnStatus = this.ice.some(s => /turns?:/.test(String(s.urls))) ? 'Zugang erhalten' : 'kein Relay-Zugang';
+      this.turnExpires = Date.now() + 20 * 60_000;
+      for (const pc of this.pcs.values()) if (pc.connectionState !== 'closed') pc.setConfiguration({ iceServers: this.ice });
+    }, 12_000, abort.signal).catch(() => {
+      if (!this.closed && id === this.selfRemote) { this.turnStatus = 'kein Relay-Zugang'; this.turnExpires = Date.now() + 60_000; this.options.onStatus?.('Verbindung dauert länger. Direkter Weg wird versucht …'); }
+    }).finally(() => { if (this.turnRequest === task) this.turnRequest = null; });
+    this.turnRequest = task; return task;
   }
   private async checkHealth() {
     if (this.closed || navigator.onLine === false) return;
     if (this.ws?.readyState !== WebSocket.OPEN) { await this.recover(); return; }
-    if (this.lastTurnRequest && Date.now() - this.lastTurnRequest > 20 * 60_000) this.requestTurn();
+    if (this.pcs.size && Date.now() >= this.turnExpires) void this.ensureTurn();
     for (const [remote, b] of this.bindings) {
-      const pc = this.pcs.get(b.remoteId), dc = this.transports.get(b.remoteId)?.channel;
-      if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed' || pc?.connectionState === 'disconnected' || dc?.readyState === 'closed') await this.restart(b.remoteId);
+      const pc = this.pcs.get(b.remoteId), dc = this.transports.get(b.remoteId)?.channel, control = this.controls.get(b.remoteId)?.channel;
+      if (pc?.connectionState === 'failed' || pc?.connectionState === 'closed' || pc?.connectionState === 'disconnected' || dc?.readyState === 'closed' || control?.readyState === 'closed' || (pc?.connectionState === 'connected' && (!dc || !control))) await this.restart(b.remoteId);
       else if (!b.online && pc && Date.now() - (this.peerStarted.get(b.remoteId) ?? Date.now()) > 30_000) await this.restart(b.remoteId);
       if (this.options.role !== 'HOST' && remote === 'host' && !pc) await this.restart(b.remoteId);
     }
   }
   private wake = () => { void this.checkHealth(); };
   private visible = () => { if (document.visibilityState === 'visible') this.wake(); };
-  async recover() { if (this.closed || this.ws?.readyState === WebSocket.OPEN) { await this.checkPeers(); return; } try { await this.connect(); } catch { this.options.onStatus?.(NETWORK_ERROR); } }
-  private async checkPeers() { for (const b of this.bindings.values()) if (this.pcs.get(b.remoteId)?.connectionState === 'failed') await this.restart(b.remoteId); }
-  async close() { if (this.closed) return; this.closed = true; this.abort.abort(); clearInterval(this.health); clearTimeout(this.turnTimer); this.turnResolve?.(); this.turnResolve = null; window.removeEventListener('online', this.wake); window.removeEventListener('pageshow', this.wake); document.removeEventListener('visibilitychange', this.visible); this.ws?.close(); this.ws = null; for (const r of this.pcs.keys()) this.dropPeer(r); for (const p of this.pending.values()) p.reject(); this.pending.clear(); }
+  async recover() { if (this.closed) return; if (this.ws?.readyState === WebSocket.OPEN) { await this.checkHealth(); return; } try { await this.connect(); } catch { this.options.onStatus?.(NETWORK_ERROR); } }
+  async close() { if (this.closed) return; this.closed = true; this.turnAbort?.abort(); clearInterval(this.health); window.removeEventListener('online', this.wake); window.removeEventListener('pageshow', this.wake); document.removeEventListener('visibilitychange', this.visible); this.ws?.close(); this.ws = null; for (const r of this.pcs.keys()) this.dropPeer(r); }
 }

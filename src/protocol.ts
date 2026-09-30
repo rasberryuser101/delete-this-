@@ -2,7 +2,7 @@ import type { Game, PublicDisplayState } from './game';
 import { capacity } from './game';
 import { isReaction, type Reaction } from './party';
 export type ControlMessage =
-  | {type:'ready'} | {type:'display-sync';state:PublicDisplayState} | {type:'countdown';value:number}
+  | {type:'ready';roundId?:string;heldPhotos?:string[]} | {type:'display-sync';state:PublicDisplayState} | {type:'countdown';value:number}
   | {type:'sync';game:Game;you:string} | {type:'vote';photoId:string;roundId:string}
   | {type:'skip-prompt';roundId:string} | {type:'write-prompt'|'caption';text:string;roundId:string}
   | {type:'avatar';path:string} | {type:'reaction';emoji:Reaction;roundId:string} | {type:'error';message:string};
@@ -13,10 +13,10 @@ const object=(value:unknown):value is Record<string,unknown>=>value!==null&&type
 const avatar=(v:unknown)=>typeof v==='string'&&/^media\/art\/avatars\/[\w-]+\.(svg|png|webp|jpg|jpeg)$/.test(v)&&v.length<=120;
 export function validateMessage(raw:unknown):WireMessage|null {
   if(!object(raw))return null;
-  const fields:Record<string,string[]>={ready:['type'],countdown:['type','value'],sync:['type','game','you'],'display-sync':['type','state'],vote:['type','photoId','roundId'],'skip-prompt':['type','roundId'],'write-prompt':['type','text','roundId'],caption:['type','text','roundId'],avatar:['type','path'],reaction:['type','emoji','roundId'],error:['type','message']};
+  const fields:Record<string,string[]>={ready:['type','roundId','heldPhotos'],countdown:['type','value'],sync:['type','game','you'],'display-sync':['type','state'],vote:['type','photoId','roundId'],'skip-prompt':['type','roundId'],'write-prompt':['type','text','roundId'],caption:['type','text','roundId'],avatar:['type','path'],reaction:['type','emoji','roundId'],error:['type','message']};
   if(typeof raw.type!=='string'||!fields[raw.type]||Object.keys(raw).some(k=>!fields[raw.type as string].includes(k)))return null;
   if(raw.type==='display-sync'&&object(raw.state)&&!('votes' in raw.state)){const {countdown,...game}=raw.state;if(Number.isInteger(countdown)&&(countdown as number)>=0&&(countdown as number)<=3&&validGame({...game,votes:{}})&&game.mode==='PARTY')return raw as ControlMessage;return null;}
-  if(raw.type==='ready')return {type:'ready'};
+  if(raw.type==='ready'){if(raw.roundId===undefined&&raw.heldPhotos===undefined)return {type:'ready'};if(!id(raw.roundId)||!Array.isArray(raw.heldPhotos)||raw.heldPhotos.length>20||!raw.heldPhotos.every(id)||new Set(raw.heldPhotos).size!==raw.heldPhotos.length)return null;return raw as WireMessage;}
   if(raw.type==='countdown'&&Number.isInteger(raw.value)&&(raw.value as number)>=0&&(raw.value as number)<=3)return raw as WireMessage;
   if(raw.type==='vote'&&id(raw.photoId)&&id(raw.roundId))return raw as WireMessage;
   if(raw.type==='skip-prompt'&&id(raw.roundId))return raw as WireMessage;

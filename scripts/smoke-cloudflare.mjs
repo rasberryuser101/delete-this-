@@ -30,6 +30,9 @@ async function connect(code, role,ip='127.0.0.1') {
   await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
   return { ws, inbox, async next(type) { for (let i = 0; i < 50; i++) { const idx = inbox.findIndex(m => m.type === type); if (idx >= 0) return inbox.splice(idx, 1)[0]; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error(`Missing ${type}: ${JSON.stringify(inbox)}`); } };
 }
+async function turn(code, member, overrides={}, ip='127.0.0.1', source=origin) {
+  return fetch(`${origin}/api/turn`,{method:'POST',headers:{Origin:source,'Content-Type':'application/json','CF-Connecting-IP':ip},body:JSON.stringify({code,id:member.id,token:member.accessToken,...overrides})});
+}
 try {
   const status = await waitForServer(); assert.deepEqual(await status.json(), { turn: false });
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -38,6 +41,7 @@ try {
   const host = await connect(code, 'HOST');
   const welcome = await host.next('welcome'); assert.equal(typeof welcome.hostToken, 'string');
   const guest = await connect(code, 'GUEST'); const joined = await guest.next('welcome');
+  assert.equal((await turn(code,joined)).status,403,'Vor Freigabe kein Relay-Zugang');
   assert.equal((await host.next('peer-joined')).id, joined.id);
   assert.equal((await guest.next('peer-joined')).id, welcome.id);
   guest.ws.send('null'); guest.ws.send('[]'); guest.ws.send('not-json');
@@ -51,8 +55,17 @@ try {
   assert.equal((await host.next('route')).data.type, 'JOIN');
   host.ws.send(JSON.stringify({ type: 'route', to: joined.id, data: { type: 'APPROVED', id: 'guest', role: 'PLAYER' } }));
   assert.equal((await guest.next('route')).data.type, 'APPROVED');
-  guest.ws.send(JSON.stringify({ type: 'turn' }));
-  assert.match(JSON.stringify((await guest.next('turn')).iceServers), /stun\.cloudflare\.com/);
+  assert.equal((await turn(code,joined,{token:'00000000-0000-0000-0000-000000000000'})).status,403,'Code allein bzw. geratenes Ticket reicht nicht');
+  assert.equal((await turn(otherCode,joined)).status,403,'Ticket ist an die Lobby gebunden');
+  assert.equal((await turn(code,joined,{},'203.0.113.4')).status,403,'Ticket ist an die aktive Verbindung/IP gebunden');
+  assert.equal((await turn(code,joined,{},'127.0.0.1','https://foreign.example')).status,404,'Fremde Webseiten erhalten keinen Zugang');
+  const credentials=await turn(code,joined);assert.equal(credentials.status,200);assert.equal(credentials.headers.get('Cache-Control'),'no-store');
+  assert.match(JSON.stringify((await credentials.json()).iceServers),/stun\.cloudflare\.com/);
+  assert.equal((await turn(code,joined)).status,429,'Eine Verbindung kann keine Zugangsdaten im Kreis abrufen');
+  guest.ws.send(JSON.stringify({type:'turn'}));
+  for(const data of [{type:'CONTROL',requestId:'x',message:{type:'ready'}},{type:'ACK',requestId:'x',ok:true}])guest.ws.send(JSON.stringify({type:'route',to:welcome.id,data}));
+  await new Promise(resolve=>setTimeout(resolve,120));assert.equal(host.inbox.some(m=>m.type==='route'),false,'Spielaktionen werden auch nach Freigabe nicht über die Lobby weitergeleitet');
+  assert.equal(guest.inbox.some(m=>m.type==='turn'),false,'Keine Credential-Abfrage im Durable Object');
   guest.ws.send(JSON.stringify({ type: 'route', to: welcome.id, data: { type: 'CHANNEL_READY' } }));
   assert.equal((await host.next('route')).data.type, 'CHANNEL_READY');
   guest.ws.send(JSON.stringify({ type: 'route', to: welcome.id, data: { type: 'ICE', candidate: { candidate: 'candidate:1' } } }));
@@ -65,6 +78,7 @@ try {
   assert.equal((await guest.next('route')).data.type, 'DENIED');
   await new Promise(resolve => setTimeout(resolve, 120));
   assert.equal(guest.ws.readyState, WebSocket.CLOSED, 'Entfernte Gäste verlieren die Serververbindung');
+  assert.equal((await turn(code,joined)).status,403,'Entfernte Gäste verlieren auch den Credential-Zugang');
   const retry = await connect(code, 'GUEST'); const retryWelcome = await retry.next('welcome');
   host.ws.send(JSON.stringify({ type: 'route', to: retryWelcome.id, data: { type: 'APPROVED', id: 'guest', role: 'PLAYER' } }));
   assert.equal((await retry.next('route')).data.type, 'APPROVED', 'Neue Anfrage bleibt nach Ablehnung möglich');
@@ -93,7 +107,7 @@ try {
   assert.equal(denied.inbox.some(m => m.type === 'welcome'), false, 'Rate-Limit darf keinen Lobbyzugang erteilen');
   const stillMissing = await connect(unusedCode, 'GUEST');
   assert.match((await stillMissing.next('error')).message, /Lobby nicht gefunden/, 'Abgelehnter Host hat keine Lobby erstellt');
-  console.log('Cloudflare Worker: 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limit, TURN-Zugang und Isolation geprüft.');
+  console.log('Cloudflare Worker: 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limits, HTTP-TURN mit Lobby-/Token-/IP-/Origin-Prüfung, keine Spielaktionen im Signalling und Isolation geprüft.');
 } finally {
   for (const ws of clients) ws.close();
   worker.kill('SIGTERM');

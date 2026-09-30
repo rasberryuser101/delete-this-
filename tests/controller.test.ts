@@ -50,7 +50,7 @@ function network() {
 const controllers:GameController[]=[];
 function create(net:ReturnType<typeof network>, process:()=>Promise<Blob>=async()=>jpeg){const c=new GameController({session:net.session,process,receive:(data,meta)=>receivePhoto(data,meta,async()=>{}),sound:()=>{}});controllers.push(c);return c;}
 beforeEach(()=>vi.useFakeTimers());
-afterEach(()=>{controllers.splice(0).forEach(c=>c.leave());vi.useRealTimers();});
+afterEach(()=>{controllers.splice(0).forEach(c=>c.leave());vi.useRealTimers();vi.restoreAllMocks();});
 it('wiederholt eine fehlgeschlagene Host-Erstellung mit demselben Namen und Modus',async()=>{
   const net=network();
   const session=vi.fn().mockRejectedValueOnce(new Error('Schutzpause')).mockImplementation(net.session);
@@ -72,10 +72,11 @@ async function pair(mode:'PARTY'|'REMOTE'='REMOTE') {
 }
 describe('Mehrgeräte-Spielablauf mit Empfangsbestätigungen',()=>{
   it('wartet bei blockierten Remote-Fotos und öffnet Voting erst nach bestätigtem Empfang',async()=>{
+    vi.spyOn(Math,'random').mockReturnValue(0);
     const {host,guest,net}=await pair();host.begin(['classic']);await vi.advanceTimersByTimeAsync(7500);
     await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));
     net.blockHostPhotos(true);await host.advanceReveal();await flush();
-    expect(host.snapshot().game?.revealIndex).toBe(0);expect(guest.snapshot().images).toEqual({});
+    expect(host.snapshot().game?.revealIndex).toBe(0);expect(Object.keys(guest.snapshot().images)).toEqual([host.snapshot().game!.photos.find(p=>p.ownerId==='device-1')!.id]);
     await host.advanceReveal();expect(host.snapshot().game?.revealIndex).toBe(0);expect(host.snapshot().game?.phase).toBe('reveal');
     await guest.vote(host.snapshot().game!.photos[0].id);expect(host.snapshot().game?.votes).toEqual({});
     net.blockHostPhotos(false);await host.advanceReveal();await flush();expect(host.snapshot().game?.revealIndex).toBe(1);
@@ -89,14 +90,14 @@ describe('Mehrgeräte-Spielablauf mit Empfangsbestätigungen',()=>{
     await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));
     await expect(net.nodes[0].session.control.onRequest!(JSON.stringify({type:'reaction',emoji:'😂',roundId}),{peerId:'stranger',signal:new AbortController().signal})).rejects.toThrow('Nicht freigegeben');
     await expect(net.nodes[1].session.photo.onRequest!(new Uint8Array([255,216,255,1,2,3,4]),{peerId:'device-0',metadata:{version:2,id:host.snapshot().game!.photos[0].id,roundId,bytes:7,mime:'image/jpeg'},signal:new AbortController().signal})).rejects.toThrow('nicht erwartet');
-    host.remove('device-1');await host.advanceReveal();expect(guest.snapshot().images).toEqual({});
+    const own=Object.keys(guest.snapshot().images);host.remove('device-1');await host.advanceReveal();expect(Object.keys(guest.snapshot().images)).toEqual(own);
     await expect(net.nodes[0].session.control.onRequest!('{"type":"ready"}',{peerId:'device-1',signal:new AbortController().signal})).rejects.toThrow('Nicht freigegeben');
   });
   it('teilt Reaktionen in der Lobby-Show, limitiert Spam und entfernt sie beim Verlassen',async()=>{
     const {host,guest,net}=await pair();host.begin(['classic']);await vi.advanceTimersByTimeAsync(7500);
     await guest.react('😂');expect(host.snapshot().reaction).toBeNull();
     await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));
-    await guest.react('😂');await flush();expect(host.snapshot().reaction?.emoji).toBe('😂');expect(guest.snapshot().reaction?.emoji).toBe('😂');
+    await flush();await guest.react('😂');await flush();expect(host.snapshot().reaction?.emoji).toBe('😂');expect(guest.snapshot().reaction?.emoji).toBe('😂');
     await guest.react('💀');expect(host.snapshot().reaction?.emoji).toBe('😂');
     await expect(net.nodes[0].session.control.onRequest!(JSON.stringify({type:'reaction',emoji:'😂',roundId:'another-round'}),{peerId:'device-1',signal:new AbortController().signal})).rejects.toThrow('aktuellen Show');
     host.leave();guest.leave();await vi.advanceTimersByTimeAsync(2000);expect(host.snapshot().reaction).toBeNull();expect(guest.snapshot().reaction).toBeNull();
@@ -108,6 +109,7 @@ describe('Mehrgeräte-Spielablauf mit Empfangsbestätigungen',()=>{
     expect(host.snapshot().requests).toEqual([]);expect(guest.snapshot().game).toBeNull();expect(guest.snapshot().images).toEqual({});
   });
   it.each(['PARTY','REMOTE'] as const)('spielt eine vollständige %s-Runde, Countdown, Punkte und Cleanup',async mode=>{
+    vi.spyOn(Math,'random').mockReturnValue(0);
     const {host,guest}=await pair(mode);
     host.begin(['roast']);await flush();expect(guest.snapshot().countdown).toBe(3);
     await vi.advanceTimersByTimeAsync(7500);await flush();
@@ -116,12 +118,12 @@ describe('Mehrgeräte-Spielablauf mit Empfangsbestätigungen',()=>{
     expect(host.snapshot().game?.photos).toHaveLength(1);expect(guest.snapshot().progress).toBe(100);
     await host.submit(new File(['original'],'photo.jpg',{type:'image/jpeg'}));await flush();
     expect(guest.snapshot().game?.phase).toBe('reveal');
-    expect(guest.snapshot().images).toEqual({});expect(host.snapshot().game?.revealIndex).toBe(-1);
+    expect(Object.keys(guest.snapshot().images)).toHaveLength(1);expect(host.snapshot().game?.revealIndex).toBe(-1);
     await host.advanceReveal();await flush();expect(guest.snapshot().game?.revealIndex).toBe(0);
-    expect(Object.keys(guest.snapshot().images)).toHaveLength(mode==='REMOTE'?1:0);
+    expect(Object.keys(guest.snapshot().images)).toHaveLength(mode==='REMOTE'?2:1);
     await host.advanceReveal();await flush();expect(guest.snapshot().game?.revealIndex).toBe(1);
     await host.advanceReveal();await flush();expect(guest.snapshot().game?.phase).toBe('vote');
-    expect(Object.keys(guest.snapshot().images)).toHaveLength(mode==='REMOTE'?2:0);
+    expect(Object.keys(guest.snapshot().images)).toHaveLength(mode==='REMOTE'?2:1);
     const photos=host.snapshot().game!.photos;
     await host.vote(photos.find(p=>p.ownerId!=='host')!.id);
     await guest.vote(photos.find(p=>p.ownerId==='host')!.id);await flush();
@@ -171,7 +173,7 @@ it('Display wird separat bestätigt, erhält vor Reveal keine Fotos und kann wed
  await expect(net.nodes[0].session.photo.onRequest!(new Uint8Array([255,216,255,1,2,3,4]),{peerId:'device-2',metadata:{version:2,id:'x',roundId,bytes:7,mime:'image/jpeg'},signal:new AbortController().signal})).rejects.toThrow('Nicht freigegeben');
  await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));expect(display.snapshot().game?.photos).toEqual([]);expect(display.snapshot().images).toEqual({});
  await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));expect(display.snapshot().images).toEqual({});
- await host.advanceReveal();await flush();expect(Object.keys(display.snapshot().images)).toHaveLength(1);expect(display.snapshot().game?.photos).toHaveLength(1);expect(guest.snapshot().images).toEqual({});
+ await host.advanceReveal();await flush();expect(Object.keys(display.snapshot().images)).toHaveLength(1);expect(display.snapshot().game?.photos).toHaveLength(1);expect(Object.keys(guest.snapshot().images)).toHaveLength(1);
  await host.advanceReveal();await host.advanceReveal();await flush();expect(display.snapshot().game?.phase).toBe('vote');
  const photoId=host.snapshot().game!.photos[0].id;
  await expect(net.nodes[0].session.control.onRequest!(JSON.stringify({type:'vote',roundId,photoId}),{peerId:'device-2',signal:new AbortController().signal})).rejects.toThrow('Display');
@@ -201,6 +203,7 @@ it('wiederholt einen fehlgeschlagenen ersten Spielstand-Abruf und beendet die La
  expect(guest.snapshot()).toMatchObject({busy:false,online:true,stage:'connected',status:'',game:{phase:'lobby'}});
 });
 it('führt die Show automatisch vor, pausiert bei Übertragungsfehlern und räumt Timer auf',async()=>{
+ vi.spyOn(Math,'random').mockReturnValue(0);
  const {host,guest,net}=await pair('REMOTE');host.begin(['classic']);await vi.advanceTimersByTimeAsync(7500);
  await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));
  expect(host.snapshot().game?.revealIndex).toBe(-1);
@@ -234,7 +237,7 @@ it('synchronisiert drei Runden und ein Finale zu Gästen, blockiert weitere Rund
 it.each(['PARTY','REMOTE'] as const)('spielt Reverse auf getrennten %s-Geräten mit genau einer Fotozuweisung und Cleanup',async mode=>{
  const {host,guest}=await pair(mode);host.configure({style:'REVERSE',winnerBonus:false});host.begin([]);await vi.advanceTimersByTimeAsync(7500);
  await guest.submit(new File(['x'],'guest.jpg',{type:'image/jpeg'}));await host.submit(new File(['x'],'host.jpg',{type:'image/jpeg'}));await flush();
- expect(host.snapshot().game?.phase).toBe('caption');expect(guest.snapshot().game?.phase).toBe('caption');expect(Object.keys(guest.snapshot().images)).toHaveLength(1);
+ expect(host.snapshot().game?.phase).toBe('caption');expect(guest.snapshot().game?.phase).toBe('caption');expect(Object.keys(guest.snapshot().images)).toHaveLength(2);
  const g=host.snapshot().game!,assigned=g.assignments['device-1'];expect(g.photos.find(p=>p.id===assigned)?.ownerId).toBe('host');
  await guest.sendText('Der Moment nach dem dritten Kaffee.');await host.sendText('Wenn der Chef die Frontkamera öffnet.');await flush();expect(host.snapshot().game?.phase).toBe('reveal');
  await host.advanceReveal();await host.advanceReveal();await host.advanceReveal();await flush();expect(guest.snapshot().game?.phase).toBe('vote');
@@ -287,4 +290,12 @@ it('wendet manuelle Präsentation aus der Lobby an und sperrt spätere Änderung
  await host.advanceReveal();await host.advanceReveal();await guest.vote(host.snapshot().game!.photos.find(p=>p.ownerId==='host')!.id);await host.vote(host.snapshot().game!.photos.find(p=>p.ownerId!=='host')!.id);await flush();
  expect(host.snapshot().game?.players.some(p=>p.score>0)).toBe(true);expect(guest.snapshot().game?.players.every(p=>p.score===0)).toBe(true);
  host.configure({style:'REVERSE',hideScores:false});expect(host.snapshot().game).toMatchObject({style:'CLASSIC',hideScores:true,autoReveal:false});expect(host.snapshot().error).toContain('vor der Partie');
+});
+it('sendet eigene Fotos nicht zurück und beim Reconnect keine bereits gehaltenen Bilder erneut',async()=>{
+ const {host,guest,net}=await pair('REMOTE');host.configure({autoReveal:false});host.begin(['classic']);await vi.advanceTimersByTimeAsync(7500);
+ const sends=vi.spyOn(net.nodes[0].session.photo,'request');
+ await guest.submit(new File(['x'],'guest.jpg'));await host.submit(new File(['x'],'host.jpg'));await host.advanceReveal();await host.advanceReveal();await flush();
+ expect(sends).toHaveBeenCalledTimes(1);expect(Object.keys(guest.snapshot().images)).toHaveLength(2);
+ net.disconnect('device-0','device-1');net.reconnect('device-0','device-1');await flush();expect(sends).toHaveBeenCalledTimes(1);
+ host.skipCurrentRound();await flush();expect(guest.snapshot().images).toEqual({});
 });

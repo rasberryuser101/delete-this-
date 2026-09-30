@@ -1,5 +1,5 @@
 export const MAX_IMAGE_BYTES = 1_000_000;
-export const TARGET_IMAGE_BYTES = 400_000;
+export const TARGET_IMAGE_BYTES = 300_000;
 export const MAX_EDGE = 1280;
 async function openImage(blob: Blob): Promise<{source: CanvasImageSource; width:number; height:number; close:()=>void}> {
   if (typeof createImageBitmap === 'function') {

@@ -30,6 +30,7 @@ export class GameController {
   private allowed = new Map<string,string>();
   private gate = new AdmissionGate(requests => this.patch({requests}));
   private photos = new PhotoStore();
+  private ownSubmission:{id:string;blob:Blob}|null=null;
   private used:string[] = [];
   private lifetime = new AbortController();
   private round = new AbortController();
@@ -41,6 +42,8 @@ export class GameController {
   private receiving = new Set<string>();
   private distributing = new Map<string,Promise<boolean>>();
   private delivered = new Map<string,Set<string>>();
+  private synced = new Map<string,{key:string;task:Promise<void>}>();
+  private syncQueued = new Set<string>();
   private reactionTimes = new Map<string,number>();
   private lastReactionAt = -Infinity;
   private revealTimer:ReturnType<typeof setTimeout>|undefined;
@@ -54,32 +57,47 @@ export class GameController {
   clearError = () => this.patch({error:''});
   fail = (e:unknown) => {this.patch({error:message(e),status:'',busy:false});this.deps.sound('error');};
   private checkName(name:string) { if(!name.trim()) throw new Error('Bitte zuerst einen Namen eingeben.'); return name.trim().slice(0,30); }
-  private clearPhotos() {clearTimeout(this.promptTimer);clearTimeout(this.revealTimer);this.round.abort(); this.round=new AbortController(); this.photos.clear();this.session?.clearTransfers?.();this.receiving.clear();this.distributing.clear();this.delivered.clear();this.reactionTimes.clear();this.lastReactionAt=-Infinity;clearTimeout(this.reactionTimer);this.patch({images:{},progress:0,reaction:null,busy:false});}
+  private clearPhotos() {clearTimeout(this.promptTimer);clearTimeout(this.revealTimer);this.round.abort(); this.round=new AbortController(); this.photos.clear();this.ownSubmission=null;this.session?.clearTransfers?.();this.receiving.clear();this.distributing.clear();this.delivered.clear();this.reactionTimes.clear();this.lastReactionAt=-Infinity;clearTimeout(this.reactionTimer);this.patch({images:{},progress:0,reaction:null,busy:false});}
   private put(id:string,blob:Blob) {this.photos.put(id,blob);this.patch({images:this.photos.urls()});}
   leave = () => {
     this.epoch++; this.lifetime.abort();this.lifetime=new AbortController();
     this.cancelJoin?.();this.cancelJoin=undefined;clearTimeout(this.timer);clearTimeout(this.countdownTimer);clearInterval(this.poll);
-    this.gate.clear();this.allowed.clear();this.used=[];this.host='';this.displays.clear();
+    this.gate.clear();this.allowed.clear();this.used=[];this.host='';this.displays.clear();this.synced.clear();this.syncQueued.clear();
     const session=this.session;this.session=null; if(session) void session.room.leave().catch(()=>{});
     this.clearPhotos();this.state=initial();this.listeners.forEach(fn=>fn());
   };
   private updateDisplays(){this.patch({displays:[...this.displays].map(([id,d])=>({id,...d}))});}
   private async send(id:string,msg:WireMessage) {
     const session=this.session; if(!session) throw new Error('Verbindung beendet.');
-    return withDeadline(signal=>session.control.request(encodeMessage(msg),{target:id,signal,timeoutMs:5_000}),7_000,this.lifetime.signal);
+    return withDeadline(signal=>session.control.request(encodeMessage(msg),{target:id,signal,timeoutMs:5_000,...(msg.type==='reaction'?{acknowledge:false}:{})}),7_000,this.lifetime.signal);
   }
-  private async sync(id:string) {
-    const game=this.state.game;if(!game || !this.allowed.has(id)) return;
-    if(this.displays.has(id))await this.send(id,{type:'display-sync',state:displayView(game,this.state.countdown)});
-    else {await this.send(id,{type:'sync',game:viewFor(game,id),you:id});if(this.state.countdown)await this.send(id,{type:'countdown',value:this.state.countdown});}
+  private ready():WireMessage {
+    const game=this.state.game;
+    return game?.roundId?{type:'ready',roundId:game.roundId,heldPhotos:Object.keys(this.photos.urls())}:{type:'ready'};
+  }
+  private sync(id:string):Promise<void> {
+    const game=this.state.game;if(!game || !this.allowed.has(id)) return Promise.resolve();
+    const countdown=this.state.countdown;
+    const msg:WireMessage=this.displays.has(id)?{type:'display-sync',state:displayView(game,countdown)}:{type:'sync',game:viewFor(game,id),you:id};
+    const key=JSON.stringify([msg,countdown]),previous=this.synced.get(id);
+    if(previous?.key===key)return previous.task;
+    const task=(async()=>{await this.send(id,msg);if(!this.displays.has(id)&&countdown)await this.send(id,{type:'countdown',value:countdown});})();
+    const entry={key,task};this.synced.set(id,entry);
+    void task.catch(()=>{if(this.synced.get(id)===entry)this.synced.delete(id);});
+    return task;
+  }
+  private queueSync(id:string) {
+    if(this.syncQueued.has(id))return;
+    this.syncQueued.add(id);const epoch=this.epoch;
+    queueMicrotask(()=>{if(epoch!==this.epoch)return;this.syncQueued.delete(id);void this.sync(id).catch(()=>{});});
   }
   private publish(game:Game) {
     const previous=this.state.game;
     if(game.roundId!==previous?.roundId || game.phase==='result') this.clearPhotos();
     if(!game.reactionsEnabled){clearTimeout(this.reactionTimer);this.patch({reaction:null});}
     this.patch({game,countdown:0,...(game.phase==='lobby'||game.roundId!==previous?.roundId?{autoReveal:game.autoReveal}:{})});
-    for(const player of game.players) if(player.id!=='host'&&player.connected) void this.sync(player.id).catch(()=>{});
-    for(const [id,d] of this.displays)if(d.connected)void this.sync(id).catch(()=>{});
+    for(const player of game.players) if(player.id!=='host'&&player.connected) this.queueSync(player.id);
+    for(const [id,d] of this.displays)if(d.connected)this.queueSync(id);
     if(game.phase==='result'&&previous?.phase!=='result') this.deps.sound(isMatchOver(game)?'gameover':'winner');
   }
   create = async (name:string, mode:Mode,displayOnly=false,avatar?:string) => {
@@ -106,11 +124,12 @@ export class GameController {
       this.session=session;this.patch({hostKey:session.publicKey??''});this.attach(session,epoch);
       session.room.onPeerJoin=id=>{
         if(epoch!==this.epoch) return;
+        this.synced.delete(id);
         const name=this.allowed.get(id), game=this.state.game;if(!name||!game)return;
         const display=this.displays.get(id);if(display){display.connected=true;this.updateDisplays();this.delivered.delete(id);void this.sync(id).then(()=>this.distribute(id)).catch(()=>{});this.patch({status:`${name} ist als Display dabei!`});return;}
         this.delivered.delete(id);
         const existing=game.players.find(p=>p.id===id);
-        if(existing) {this.publish({...game,players:game.players.map(p=>p.id===id?{...p,connected:true}:p)});void this.sync(id).then(()=>this.distribute(id)).catch(()=>{});}
+        if(existing) {this.publish({...game,players:game.players.map(p=>p.id===id?{...p,connected:true}:p)});void this.sync(id).catch(()=>{});}
         else {try{this.publish(joinPlayer(game,{id,name,score:0,connected:true}));}catch{return;}}
         this.deps.sound('connected');this.patch({status:`${name} ist dabei!`});
       };
@@ -138,7 +157,7 @@ export class GameController {
       });
       if(epoch!==this.epoch){void session.room.leave().catch(()=>{});return;}
       this.session=session;this.patch({check:session.publicKey?session.publicKey.slice(-12).toUpperCase():peerCheck(session.selfId)});this.attach(session,epoch);
-      session.room.onPeerJoin=id=>{if(epoch!==this.epoch||id!==this.host)return;if(this.state.stage==='connected'){this.patch({online:true,status:'Wieder verbunden'});void this.send(this.host,{type:'ready'}).catch(()=>{});}else resolveJoin();};
+      session.room.onPeerJoin=id=>{if(epoch!==this.epoch||id!==this.host)return;if(this.state.stage==='connected'){this.patch({online:true,status:'Wieder verbunden'});void this.send(this.host,this.ready()).catch(()=>{});}else resolveJoin();};
       arm(JOIN_TIMEOUT_MS,()=>transportFailed?NETWORK_ERROR:session.relayCount()===0?'Kein Lobby-Dienst erreichbar. Internet, VPN oder Inhaltsblocker prüfen.':CONNECTION_ERROR);
       this.startPolling(epoch);
       try {await joined;} finally {clearTimeout(this.timer);this.cancelJoin=undefined;}
@@ -146,7 +165,7 @@ export class GameController {
       this.patch({busy:false,stage:'connected',online:true,status:'Freigegeben! Spielstand wird geladen …'});
       for(let attempt=0;attempt<3;attempt++) {
         if(epoch!==this.epoch)return;
-        try { await this.send(this.host,{type:'ready'}); break; }
+        try { await this.send(this.host,this.ready()); break; }
         catch { if(attempt===2 && !this.state.game)throw new Error('Spielstand konnte nicht geladen werden. Bitte erneut beitreten.'); this.patch({status:'Spielstand wird erneut angefordert …'}); }
       }
       if(this.state.game)this.patch({online:true,status:''});if(guestRole==='PLAYER'&&this.avatar)await this.chooseAvatar(this.avatar);this.deps.sound('connected');
@@ -157,6 +176,7 @@ export class GameController {
     session.photo.onRequest=(data,{peerId,metadata,signal})=>this.acceptPhoto(data,peerId,metadata,epoch,signal);
     session.room.onPeerLeave=id=>{
       if(epoch!==this.epoch)return;
+      this.synced.delete(id);
       if(this.state.role==='HOST') {
         this.gate.decide(id,false,'Gerät hat die Verbindung verloren.');
         this.delivered.delete(id);this.distributing.delete(id);
@@ -179,7 +199,11 @@ export class GameController {
     if(this.state.role==='HOST') {
       if(!this.allowed.has(id)||(!this.displays.get(id)?.connected&&!this.state.game?.players.some(p=>p.id===id&&p.connected)))throw new Error('Nicht freigegeben.');
       if(this.displays.has(id)&&msg.type!=='ready')throw new Error('Display darf keine Spieleraktionen ausführen.');
-      if(msg.type==='ready') { await this.sync(id); void this.distribute(id); }
+      if(msg.type==='ready') {
+        const game=this.state.game!;
+        if(msg.roundId===game.roundId&&msg.heldPhotos){const allowed=new Set([...photosFor(game,id),...game.photos.filter(p=>p.ownerId===id)].map(p=>p.id));const held=this.delivered.get(id)??new Set<string>();for(const photo of msg.heldPhotos)if(allowed.has(photo))held.add(photo);this.delivered.set(id,held);}
+        await this.sync(id); void this.distribute(id);
+      }
       else if(msg.type==='avatar') {this.applyAvatar(id,msg.path);}
       else if(msg.type==='write-prompt'||msg.type==='caption') {this.applyText(id,msg.type,msg.text,msg.roundId);}
       else if(msg.type==='skip-prompt') {this.applyPromptSkip(id,msg.roundId);}
@@ -231,7 +255,9 @@ export class GameController {
       if(transferSignal?.aborted||epoch!==this.epoch||roundSignal.aborted||this.state.game?.roundId!==meta.roundId)throw new Error('Runde beendet.');
       if(host&&(!this.allowed.has(id)||!this.state.game.players.some(p=>p.id===id&&p.connected)))throw new Error('Nicht mehr freigegeben.');
       if(host) {
-        const next=submitPhoto(this.state.game,id,meta.id);this.put(meta.id,blob);this.publish(next);this.deps.sound('submit');
+        const next=submitPhoto(this.state.game,id,meta.id);this.put(meta.id,blob);
+        if(meta.retained){const held=this.delivered.get(id)??new Set<string>();held.add(meta.id);this.delivered.set(id,held);}
+        this.publish(next);this.deps.sound('submit');
         this.settleRound();
       } else {this.put(meta.id,blob);if(this.state.game.phase==='reveal'&&this.state.game.photos[this.state.game.revealIndex]?.id===meta.id)this.deps.sound('camera');}
       return ack;
@@ -248,18 +274,23 @@ export class GameController {
     if(direction==='send')return this.state.role==='PLAYER'&&visibility==='PRIVATE'&&g.phase==='submit';
     return visibility==='PUBLIC'&&(this.state.role==='DISPLAY'||g.mode==='REMOTE'||g.phase==='caption')&&photosFor(g,this.state.you).some(p=>p.id===meta.id);
   }
-  retry = async()=>{if(this.state.busy)return;this.clearError();if(this.session){await this.session.recover?.();if(this.state.role!=='HOST'&&this.state.online)await this.send(this.host,{type:'ready'}).catch(()=>{});}else if(this.lastHost)await this.create(this.lastHost.name,this.lastHost.mode,this.lastHost.displayOnly,this.lastHost.avatar);else if(this.lastJoin)await this.join(this.lastJoin.name,this.lastJoin.code,this.lastJoin.role,this.lastJoin.hostKey,this.avatar);};
+  retry = async()=>{if(this.state.busy)return;this.clearError();if(this.session){await this.session.recover?.();if(this.state.role!=='HOST'&&this.state.online)await this.send(this.host,this.ready()).catch(()=>{});}else if(this.lastHost)await this.create(this.lastHost.name,this.lastHost.mode,this.lastHost.displayOnly,this.lastHost.avatar);else if(this.lastJoin)await this.join(this.lastJoin.name,this.lastJoin.code,this.lastJoin.role,this.lastJoin.hostKey,this.avatar);};
   submit = async(file:File) => {
     const game=this.state.game, epoch=this.epoch;
     if(this.state.role==='DISPLAY'||!game||game.phase!=='submit'||this.state.busy||!this.state.online)return;
+    if(game.photos.some(p=>p.ownerId===this.state.you))return;
     const roundId=game.roundId,signal=this.round.signal;this.patch({busy:true,error:'',progress:0,status:'Foto wird lokal verkleinert …'});
     try {
-      const blob=await this.deps.process(file);
+      // Keep one local submission per round. A lost acknowledgement retries
+      // the same photo/id instead of accumulating blobs or changing an accepted photo.
+      const blob=this.ownSubmission?.blob??await this.deps.process(file);
       if(epoch!==this.epoch||signal.aborted||this.state.game?.roundId!==roundId)return;
-      const id=crypto.randomUUID();
+      const id=this.ownSubmission?.id??crypto.randomUUID();
       if(this.state.role==='HOST') {const next=submitPhoto(this.state.game,'host',id);this.put(id,blob);this.publish(next);this.settleRound();}
       else {
-        const meta:PhotoMetadata={version:2,id,roundId,bytes:blob.size,mime:blob.type as PhotoMetadata['mime']};
+        this.ownSubmission={id,blob};
+        this.put(id,blob);
+        const meta:PhotoMetadata={version:2,id,roundId,bytes:blob.size,mime:blob.type as PhotoMetadata['mime'],retained:true};
         this.patch({status:'Foto wird direkt zum Host gesendet …'});
         await transferPhoto(this.session!.photo,this.host,blob,meta,signal,n=>{if(epoch===this.epoch&&!signal.aborted)this.patch({progress:n});});
       }

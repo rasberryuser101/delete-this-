@@ -1,13 +1,13 @@
 import type { RequestAction } from './actions';
 import { isSafeImage, MAX_IMAGE_BYTES, validateImage } from './image';
-export type PhotoMetadata = {version: 2; id: string; roundId: string; bytes: number; mime: 'image/webp' | 'image/jpeg'};
+export type PhotoMetadata = {version: 2; id: string; roundId: string; bytes: number; mime: 'image/webp' | 'image/jpeg'; retained?: boolean};
 export type PhotoAck = {ok: true; id: string; roundId: string};
 export type PhotoAction = RequestAction<Uint8Array, PhotoAck>;
 const safeId = (value: unknown): value is string => typeof value === 'string' && /^[\w-]{1,100}$/.test(value);
 export function parsePhotoMetadata(value: unknown): PhotoMetadata | null {
   if (!value || typeof value !== 'object') return null;
   const v = value as Record<string, unknown>;
-  if (v.version !== 2 || !safeId(v.id) || !safeId(v.roundId) || !Number.isInteger(v.bytes) || (v.bytes as number) < 1 || (v.bytes as number) > MAX_IMAGE_BYTES || !['image/jpeg','image/webp'].includes(v.mime as string)) return null;
+  if (v.version !== 2 || !safeId(v.id) || !safeId(v.roundId) || !Number.isInteger(v.bytes) || (v.bytes as number) < 1 || (v.bytes as number) > MAX_IMAGE_BYTES || !['image/jpeg','image/webp'].includes(v.mime as string) || (v.retained !== undefined && typeof v.retained !== 'boolean')) return null;
   return v as PhotoMetadata;
 }
 /** Reassembled RTC binary; original files never enter this path. */
