@@ -1,5 +1,13 @@
 # Version 7.2: Weniger Verkehr, dieselbe Foto-Show
 
+## Verbindungsfix 7.2.1
+
+Der Relay-Abruf war zusätzlich an dieselbe IP-Adresse wie die WebSocket-Verbindung gebunden. Das konnte ein bereits freigegebenes Gerät abweisen, wenn HTTP und WebSocket unterschiedliche Netzwerkwege verwenden. Jetzt authentifiziert ein zufälliges RAM-Ticket die aktive, freigegebene Verbindung in genau dieser Lobby. Die ursprüngliche IP-Kennung der Lobby-Verbindung bleibt für das Missbrauchslimit maßgeblich; ein Wechsel der HTTP-IP setzt den Zähler nicht zurück. Freigabeentzug und eine erneute Prüfung nach der externen Antwort bleiben bestehen.
+
+Veraltete Tabs erhalten beim Verbindungsaufbau eine Aufforderung zum Neuladen, statt auf den früheren Spielkanal zu warten. Nach diesem Update beide Geräte neu laden und eine neue Lobby erstellen. Die optionale Diagnose unterscheidet abgelehnte Zugänge (403), Schutzpausen (429) und Dienstausfälle (503), ohne Tickets oder Anbieterantworten auszugeben.
+
+Der Fehler wurde im lokalen Worker mit einer abweichenden HTTP-IP zunächst als 403 reproduziert; derselbe Test besteht nach dem Fix. Die 103 automatisierten Tests, Typecheck, Lint, Build und Worker-Smoke-Test prüfen den Code. Sie ersetzen keinen Live-Test zwischen einem echten iPhone und PC.
+
 Stand: 30.09.2026. Keine neue Infrastruktur und keine Änderung an deinen Musikdateien oder Packs. Bestehende Cloudflare-TURN-Secrets bleiben gültig. Nach dem Deployment **alle Geräte neu laden und eine neue Lobby erstellen**: alte und neue Spielkanäle sind nicht kompatibel.
 
 ## Was geändert wurde
@@ -51,7 +59,7 @@ Speicher- und Build-Nutzung haben eigene Kontingente. Die Beispiele sind einzeln
 
 ## Grenzen und Prüfung
 
-Die Anwendung bewahrt Host-Freigabe, signierte WebRTC-Angebote, erlaubte Rollen, Rundenprüfung, Empfangsbestätigungen und Foto-Cleanup. Tickets für Relay-Zugänge bleiben im RAM und werden nie in Einladungslinks geschrieben. Der Worker prüft sie gegen die aktive Freigabe und die IP-Kennung; nach der externen Antwort wird die Freigabe erneut geprüft. Der Code allein ermöglicht weiterhin nur eine Beitrittsanfrage.
+Die Anwendung bewahrt Host-Freigabe, signierte WebRTC-Angebote, erlaubte Rollen, Rundenprüfung, Empfangsbestätigungen und Foto-Cleanup. Tickets für Relay-Zugänge bleiben im RAM und werden nie in Einladungslinks geschrieben. Der Worker prüft sie gegen die aktive Freigabe und Lobby-Verbindung; nach der externen Antwort wird die Freigabe erneut geprüft. IP-Kennungen dienen den Missbrauchslimits und sind keine Identitätsprüfung. Der Code allein ermöglicht weiterhin nur eine Beitrittsanfrage.
 
 Der Standard hat nun 180 Relay-Anforderungen/Lobby/Stunde plus 90/IP/Stunde und höchstens eine/Verbindung/Minute. Verbindungsaufbau bleibt begrenzt auf 10 Host- und 40 Gastversuche/IP/Stunde sowie eine zusätzliche schnelle Schranke. Geteilte WLANs teilen die IP-Limits. Bei vielen Wiederverbindungen im selben großen WLAN kann das limitieren; beobachte echte Nutzung, bevor du Grenzen anhebst. `TURN_DAILY_LIMIT` ist optional und begrenzt Zugangsausgaben pro 24-Stunden-Fenster, nicht Partien, GB oder Euro.
 

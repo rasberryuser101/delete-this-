@@ -39,12 +39,16 @@ async function turnCredentials(request: Request, env: Env, url: URL): Promise<Re
   if (env.ENTRY_LIMIT) try { if (!(await env.ENTRY_LIMIT.limit({ key: `turn:${ip}` })).success) return reply({ error: 'Zu viele Versuche.' }, 429); } catch { /* Durable limit remains authoritative. */ }
   const body = await smallBody(request);
   if (!body || Object.keys(body).some(k => !['code','id','token'].includes(k)) || typeof body.code !== 'string' || !/^[A-HJ-NP-Z2-9]{10}$/.test(body.code) || typeof body.id !== 'string' || !IDENT.test(body.id) || typeof body.token !== 'string' || !/^[\da-f-]{36}$/.test(body.token)) return deny();
-  const ipKey = await hash(`${env.TURN_KEY_TOKEN || 'local-dev'}|${ip}`);
   const room = env.ROOMS.get(env.ROOMS.idFromName(body.code));
-  const allowed = await room.fetch('https://room.internal/turn-access', { method: 'POST', body: json({ id: body.id, token: body.token, ip: ipKey }) });
+  const ticket = json({ id: body.id, token: body.token });
+  const allowed = await room.fetch('https://room.internal/turn-access', { method: 'POST', body: ticket });
   if (!allowed.ok) return reply({ error: 'Nicht freigegeben oder zu viele Versuche.' }, allowed.status === 429 ? 429 : 403);
   if (!env.TURN_KEY_ID || !env.TURN_KEY_TOKEN) return reply({ iceServers: stun, expiresIn: 60 });
-  const gate = env.RATE.get(env.RATE.idFromName(ipKey));
+  // HTTP and WebSocket can take different network paths on the same device.
+  // Authenticate the active, approved socket ticket; keep its original IP hash
+  // for the abuse budget so changing the HTTP address cannot reset that budget.
+  const { rateKey } = await allowed.json() as { rateKey: string };
+  const gate = env.RATE.get(env.RATE.idFromName(rateKey));
   if (!(await gate.fetch('https://rate/turn', { method: 'POST', body: 'TURN' })).ok) return reply({ error: 'Zu viele Verbindungsversuche.' }, 429);
   const dailyLimit = Number(env.TURN_DAILY_LIMIT);
   if (Number.isInteger(dailyLimit) && dailyLimit > 0) {
@@ -58,7 +62,7 @@ async function turnCredentials(request: Request, env: Env, url: URL): Promise<Re
     if (!response.ok) throw new Error('Credential API failed');
     const payload = await response.json() as { iceServers?: unknown };
     if (!Array.isArray(payload.iceServers) || !payload.iceServers.length || payload.iceServers.length > 4) throw new Error('Invalid credential response');
-    const stillAllowed = await room.fetch('https://room.internal/turn-check', { method: 'POST', body: json({ id: body.id, token: body.token, ip: ipKey }) });
+    const stillAllowed = await room.fetch('https://room.internal/turn-check', { method: 'POST', body: ticket });
     if (!stillAllowed.ok) return reply({ error: 'Nicht mehr freigegeben.' }, 403);
     return reply({ iceServers: payload.iceServers, expiresIn: TURN_TTL });
   } catch { return reply({ error: 'Fotoverbindung derzeit nicht verfügbar.' }, 503); }
@@ -84,6 +88,9 @@ export default {
     if (!code || request.headers.get('Upgrade')?.toLowerCase() !== 'websocket' || request.headers.get('Origin') !== url.origin) return url.pathname.startsWith('/api/') ? deny() : env.ASSETS.fetch(request);
     const role = url.searchParams.get('role');
     if (role !== 'HOST' && role !== 'GUEST') return deny();
+    // v2 requires separate RTC photo and game channels. Older open tabs must
+    // reload instead of waiting for controls that are no longer sent over WS.
+    if (url.searchParams.get('protocol') !== '2') return rejectSocket('Diese Spielversion ist veraltet. Bitte die Seite auf beiden Geräten neu laden und eine neue Lobby erstellen.');
     if ((url.searchParams.get('ticket') || '').length > 80) return deny();
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     // The Durable Object limiter below is the authoritative fallback. This
@@ -148,9 +155,9 @@ export class Lobby extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
     if (path === '/turn-access' || path === '/turn-check') {
-      const body = await request.json() as { id?: string; token?: string; ip?: string };
+      const body = await request.json() as { id?: string; token?: string };
       const socket = body.id && this.sockets.get(body.id), member = socket && this.member(socket);
-      if (!socket || socket.readyState !== 1 || !member || !member.approved || !member.accessToken || member.accessToken !== body.token || member.ip !== body.ip || (member.role === 'GUEST' && !this.host())) return deny();
+      if (!socket || socket.readyState !== 1 || !member || !member.approved || !member.accessToken || member.accessToken !== body.token || (member.role === 'GUEST' && !this.host())) return deny();
       if (path === '/turn-check') return new Response(null, { status: 204 });
       const now = Date.now();
       if (member.lastTurn && now - member.lastTurn < TURN_COOLDOWN_MS) return new Response(null, { status: 429 });
@@ -161,7 +168,7 @@ export class Lobby extends DurableObject<Env> {
         if (!next) return false;
         await tx.put(rule.key, next); return true;
       });
-      return new Response(null, { status: accepted ? 204 : 429 });
+      return accepted ? reply({ rateKey: member.ip }) : new Response(null, { status: 429 });
     }
     const url = new URL(request.url), role = url.searchParams.get('role'), ticket = url.searchParams.get('ticket') || '';
     if (role !== 'HOST' && role !== 'GUEST') return deny();

@@ -22,8 +22,8 @@ async function waitForServer() {
   }
   throw new Error(`Worker nicht erreichbar: ${logs.slice(-3000)}`);
 }
-async function connect(code, role,ip='127.0.0.1') {
-  const ws = new WebSocket(`${origin.replace('http:', 'ws:')}/api/lobby/${code}?role=${role}`, { headers: { Origin: origin,'CF-Connecting-IP':ip } });
+async function connect(code, role,ip='127.0.0.1',protocol='2') {
+  const ws = new WebSocket(`${origin.replace('http:', 'ws:')}/api/lobby/${code}?role=${role}&protocol=${protocol}`, { headers: { Origin: origin,'CF-Connecting-IP':ip } });
   clients.push(ws);
   const inbox = [];
   ws.on('message', data => inbox.push(JSON.parse(data.toString())));
@@ -38,6 +38,9 @@ try {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const code = Array.from(randomBytes(10), byte => alphabet[byte % alphabet.length]).join('');
   const otherCode = `${code.slice(0, 9)}${alphabet[(alphabet.indexOf(code[9]) + 1) % alphabet.length]}`;
+  const stale = await connect(code,'HOST','127.0.0.1','');
+  assert.match((await stale.next('error')).message,/Spielversion ist veraltet.*neu laden/);
+  assert.equal(stale.inbox.some(m=>m.type==='welcome'),false,'Veraltete Tabs erhalten keinen Lobbyzugang');
   const host = await connect(code, 'HOST');
   const welcome = await host.next('welcome'); assert.equal(typeof welcome.hostToken, 'string');
   const guest = await connect(code, 'GUEST'); const joined = await guest.next('welcome');
@@ -57,11 +60,11 @@ try {
   assert.equal((await guest.next('route')).data.type, 'APPROVED');
   assert.equal((await turn(code,joined,{token:'00000000-0000-0000-0000-000000000000'})).status,403,'Code allein bzw. geratenes Ticket reicht nicht');
   assert.equal((await turn(otherCode,joined)).status,403,'Ticket ist an die Lobby gebunden');
-  assert.equal((await turn(code,joined,{},'203.0.113.4')).status,403,'Ticket ist an die aktive Verbindung/IP gebunden');
   assert.equal((await turn(code,joined,{},'127.0.0.1','https://foreign.example')).status,404,'Fremde Webseiten erhalten keinen Zugang');
-  const credentials=await turn(code,joined);assert.equal(credentials.status,200);assert.equal(credentials.headers.get('Cache-Control'),'no-store');
+  const credentials=await turn(code,joined,{},'203.0.113.4');assert.equal(credentials.status,200,'Freigegebenes Gerät darf HTTP und WebSocket über unterschiedliche IP-Adressen verbinden');assert.equal(credentials.headers.get('Cache-Control'),'no-store');
   assert.match(JSON.stringify((await credentials.json()).iceServers),/stun\.cloudflare\.com/);
   assert.equal((await turn(code,joined)).status,429,'Eine Verbindung kann keine Zugangsdaten im Kreis abrufen');
+  assert.equal((await turn(code,joined,{},'203.0.113.5')).status,429,'Wechsel der HTTP-IP umgeht das Verbindungslimit nicht');
   guest.ws.send(JSON.stringify({type:'turn'}));
   for(const data of [{type:'CONTROL',requestId:'x',message:{type:'ready'}},{type:'ACK',requestId:'x',ok:true}])guest.ws.send(JSON.stringify({type:'route',to:welcome.id,data}));
   await new Promise(resolve=>setTimeout(resolve,120));assert.equal(host.inbox.some(m=>m.type==='route'),false,'Spielaktionen werden auch nach Freigabe nicht über die Lobby weitergeleitet');
@@ -107,7 +110,7 @@ try {
   assert.equal(denied.inbox.some(m => m.type === 'welcome'), false, 'Rate-Limit darf keinen Lobbyzugang erteilen');
   const stillMissing = await connect(unusedCode, 'GUEST');
   assert.match((await stillMissing.next('error')).message, /Lobby nicht gefunden/, 'Abgelehnter Host hat keine Lobby erstellt');
-  console.log('Cloudflare Worker: 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limits, HTTP-TURN mit Lobby-/Token-/IP-/Origin-Prüfung, keine Spielaktionen im Signalling und Isolation geprüft.');
+  console.log('Cloudflare Worker: 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limits, HTTP-TURN mit aktivem Lobby-Ticket bei unterschiedlichen Netzwerkpfaden, Origin-Prüfung, IP-unabhängiger Cooldown, veraltete Tabs und Isolation geprüft.');
 } finally {
   for (const ws of clients) ws.close();
   worker.kill('SIGTERM');

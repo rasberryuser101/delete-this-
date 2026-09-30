@@ -1,5 +1,7 @@
 # Delete That!
 
+**Verbindungsfix 7.2.1:** Der Relay-Abruf akzeptiert freigegebene Geräte auch dann, wenn HTTP und WebSocket unterschiedliche IP-Adressen verwenden. Zugangsticket, aktive Lobby-Freigabe und Missbrauchslimits bleiben erforderlich. Nach dem Update beide Geräte neu laden und eine neue Lobby erstellen. Alte Tabs bekommen beim Verbindungsaufbau einen klaren Hinweis zum Neuladen.
+
 **Version 7.2:** Optimierter WebRTC-Spielkanal, weniger Foto-Dopplungen, bedarfsgesteuerte Relay-Zugänge und Missbrauchslimits pro Lobby. [Änderungen und Verbrauchsbeispiele](docs/OPTIMIERUNG-7.2.md). 8 Spieler auf eigenen Handys oder 20 am gemeinsamen Bildschirm; Host als reiner Bildschirm; Klassisch, Eigene Prompts, Reverse und konfigurierbarer Mix. Stimmenpunkte, optionaler Siegerbonus, Mehrheits-Skip und frei wählbare Profilbilder. Neue kompakte Lobby, Punkte erst im Finale, acht abschaltbare Reactions mit Sounds und automatische/manuelle Foto-Show als Lobby-Einstellung. **[Einfache Anleitung: Sounds, Grafiken, Einstellungen und GitHub-Dateien verwalten](docs/ANPASSEN.md).** [Einfache Anleitung zu Verbrauch, Dashboard, Sicherheitsgrenzen und Betreiberpflichten](docs/BETRIEB.md).
 
 Ein deutsches Foto-Partyspiel für 2–20 Personen. Die App besteht aus React/TypeScript, einem kleinen Cloudflare Worker für die Lobby und kurzlebige TURN-Zugänge sowie Cloudflare Static Assets für die Website. **Fotos werden ausschließlich auf den Geräten verarbeitet und über WebRTC-DataChannels ausgetauscht.** Cloudflare sieht kleine Beitritts- und Verbindungsnachrichten; Spielstände, Prompts, Stimmen und Reactions laufen ebenfalls verschlüsselt über WebRTC; bei blockierten Direktverbindungen leitet Cloudflare TURN die *verschlüsselten* WebRTC-Pakete weiter. Es gibt keine Foto-Uploads, KI, Analytics oder Foto-Datenbank.
@@ -69,6 +71,8 @@ Jede Datei `src/packs/*.json` wird beim Build **automatisch** zur Pack-Auswahl h
 Die Gastgeberfreigabe und der verschlüsselte Fotokanal sind zwei Schritte. `/api/status` muss nach dem Eintragen der Secrets `{"turn":true}` zeigen. Bei `false` fehlt mindestens ein Secret im **aktiven Worker** (Build-Variablen allein reichen nicht). Prüfe `TURN_KEY_ID` und `TURN_KEY_TOKEN` unter Settings → Variables & Secrets. Danach die Version deployen und beide Geräte neu laden.
 
 Die App wartet auf eine Bereitschaftsbestätigung beider Fotokanäle, bevor sie den Gast in die Lobby übernimmt. Ein fehlgeschlagener erster Spielstand-Abruf wird bis zu zweimal wiederholt. Nur mit `?debug=1` vor dem Hash erscheint das ausklappbare Feld „Verbindungsdiagnose“. Es zeigt nur technische Zustände (keine IP-Adressen, Zugangsdaten oder Fotos). „TURN: Zugang erhalten“ bestätigt erhaltene Zugangsdaten, nicht die tatsächliche Nutzung des Relay-Pfads.
+
+Ab 7.2.1 zeigt die Diagnose bei einem fehlgeschlagenen Zugang auch die Fehlerklasse: 403 = aktive Freigabe/Ticket fehlt, 429 = Schutzpause, 503 = Verbindungsdienst nicht verfügbar. Bitte nur diese Statuszeilen weitergeben, keine Zugangsdaten. Beide Geräte müssen die neue Seite laden; ein veralteter Tab kann nicht mit dem neuen Spielkanal verbunden werden.
 
 ## Lokal entwickeln und testen
 

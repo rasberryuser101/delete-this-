@@ -6,7 +6,7 @@ import { withDeadline, type PhotoAction, type PhotoMetadata } from './transfer';
 import type { RequestAction } from './actions';
 export { parsePhotoMetadata } from './transfer';
 
-export const BUILD = '7.2.0';
+export const BUILD = '7.2.1';
 export const CONNECTION_ERROR = 'Lobby nicht gefunden oder Verbindung fehlgeschlagen. Link prüfen und erneut versuchen.';
 export const NETWORK_ERROR = 'Verbindung fehlgeschlagen. Internet prüfen und erneut versuchen.';
 export const HOST_CONNECTION_ERROR = 'Die Lobby konnte nicht geöffnet werden. Internet-/VPN-/Inhaltsblocker-Einstellungen prüfen und erneut versuchen.';
@@ -149,6 +149,7 @@ export class CloudflareLobby {
       const url = new URL(`/api/lobby/${normalizeRoomCode(this.options.code)}`, location.origin);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       url.searchParams.set('role', this.options.role === 'HOST' ? 'HOST' : 'GUEST');
+      url.searchParams.set('protocol', '2');
       if (this.hostToken) url.searchParams.set('ticket', this.hostToken);
       const ws = new WebSocket(url); this.ws = ws;
       let welcomed = false;
@@ -342,9 +343,13 @@ export class CloudflareLobby {
     if (this.turnRequest) return this.turnRequest;
     const id = this.selfRemote, token = this.accessToken;
     const abort = new AbortController(); this.turnAbort = abort;
+    let failure = 'Abruf fehlgeschlagen';
     const task = withDeadline(async signal => {
       const response = await fetch(new URL('/api/turn', location.origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', signal, body: JSON.stringify({ code: this.options.code, id, token }) });
-      if (!response.ok) throw new Error('TURN nicht verfügbar.');
+      if (!response.ok) {
+        failure = response.status === 403 ? 'Zugang abgelehnt (403)' : response.status === 429 ? 'Schutzpause (429)' : `Dienst nicht verfügbar (${response.status})`;
+        throw new Error('TURN nicht verfügbar.');
+      }
       const data = await response.json() as { iceServers?: unknown; expiresIn?: number };
       if (!validIce(data.iceServers)) throw new Error('TURN-Antwort ungültig.');
       if (this.closed || id !== this.selfRemote) return;
@@ -353,7 +358,7 @@ export class CloudflareLobby {
       this.turnExpires = Date.now() + 20 * 60_000;
       for (const pc of this.pcs.values()) if (pc.connectionState !== 'closed') pc.setConfiguration({ iceServers: this.ice });
     }, 12_000, abort.signal).catch(() => {
-      if (!this.closed && id === this.selfRemote) { this.turnStatus = 'kein Relay-Zugang'; this.turnExpires = Date.now() + 60_000; this.options.onStatus?.('Verbindung dauert länger. Direkter Weg wird versucht …'); }
+      if (!this.closed && id === this.selfRemote) { this.turnStatus = failure; this.turnExpires = Date.now() + 60_000; this.options.onStatus?.('Verbindung dauert länger. Direkter Weg wird versucht …'); }
     }).finally(() => { if (this.turnRequest === task) this.turnRequest = null; });
     this.turnRequest = task; return task;
   }
