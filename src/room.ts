@@ -343,11 +343,13 @@ export class CloudflareLobby {
     if (this.turnRequest) return this.turnRequest;
     const id = this.selfRemote, token = this.accessToken;
     const abort = new AbortController(); this.turnAbort = abort;
-    let failure = 'Abruf fehlgeschlagen';
+    let failure = 'Abruf fehlgeschlagen', notice = '';
     const task = withDeadline(async signal => {
       const response = await fetch(new URL('/api/turn', location.origin), { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', credentials: 'omit', signal, body: JSON.stringify({ code: this.options.code, id, token }) });
       if (!response.ok) {
         failure = response.status === 403 ? 'Zugang abgelehnt (403)' : response.status === 429 ? 'Schutzpause (429)' : `Dienst nicht verfügbar (${response.status})`;
+        // Kostenbremse: the own Worker explains the pause in German.
+        if (response.status === 503) try { const info = await response.json() as { paused?: unknown; error?: unknown }; if (info.paused === true && typeof info.error === 'string' && info.error.length <= 200) { failure = 'Kostenbremse aktiv (503)'; notice = info.error; } } catch { /* not our JSON */ }
         throw new Error('TURN nicht verfügbar.');
       }
       const data = await response.json() as { iceServers?: unknown; expiresIn?: number };
@@ -358,7 +360,7 @@ export class CloudflareLobby {
       this.turnExpires = Date.now() + 20 * 60_000;
       for (const pc of this.pcs.values()) if (pc.connectionState !== 'closed') pc.setConfiguration({ iceServers: this.ice });
     }, 12_000, abort.signal).catch(() => {
-      if (!this.closed && id === this.selfRemote) { this.turnStatus = failure; this.turnExpires = Date.now() + 60_000; this.options.onStatus?.('Verbindung dauert länger. Direkter Weg wird versucht …'); }
+      if (!this.closed && id === this.selfRemote) { this.turnStatus = failure; this.turnExpires = Date.now() + 60_000; this.options.onStatus?.(notice || 'Verbindung dauert länger. Direkter Weg wird versucht …'); }
     }).finally(() => { if (this.turnRequest === task) this.turnRequest = null; });
     this.turnRequest = task; return task;
   }

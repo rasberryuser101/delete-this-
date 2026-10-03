@@ -4,6 +4,17 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-28",
   "observability": { "enabled": false },
+  // Kostenbremse (docs/BETRIEB.md). Keine Secrets hier. KILL_SWITCH steht bewusst
+  // NICHT in vars, sondern wird im Dashboard gesetzt; keep_vars verhindert, dass
+  // ein Deploy diese Dashboard-Variable wieder löscht.
+  "keep_vars": true,
+  "vars": {
+    "TURN_DAILY_LIMIT": "500",
+    "TURN_MONTHLY_STOP_GB": "950",
+    "CF_ACCOUNT_ID": "1d9ff15d990a099917629e78579650c6"
+  },
+  // Stündliche Prüfung des TURN-Verbrauchs im laufenden Kalendermonat (UTC).
+  "triggers": { "crons": ["17 * * * *"] },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

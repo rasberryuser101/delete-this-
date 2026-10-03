@@ -10,31 +10,41 @@ const origin = 'http://127.0.0.1:8899';
 const bin = fileURLToPath(new URL('../node_modules/.bin/wrangler', import.meta.url));
 const preload = fileURLToPath(new URL('./local-test-network.cjs', import.meta.url));
 const stateDir = await mkdtemp(join(tmpdir(), 'delete-this-worker-'));
-const worker = spawn(bin, ['dev', '--local', '--ip', '127.0.0.1', '--port', '8899', '--persist-to', stateDir, '--log-level', 'error'], { env: { ...process.env, NODE_OPTIONS: `--require=${preload}`, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let logs = '';
-for (const pipe of [worker.stdout, worker.stderr]) pipe.on('data', data => { logs += data.toString(); });
+const spawnWorker = (port, extra = [], dir = stateDir) => {
+  const child = spawn(bin, ['dev', '--local', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', dir, '--log-level', 'error', ...extra], { env: { ...process.env, NODE_OPTIONS: `--require=${preload}`, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  for (const pipe of [child.stdout, child.stderr]) pipe.on('data', data => { logs += data.toString(); });
+  return child;
+};
+const stopWorker = async child => { child.kill('SIGTERM'); await new Promise(resolve => child.exitCode !== null ? resolve() : child.once('exit', resolve)); };
+// --test-scheduled exposes /__scheduled locally so the cron handler can run without network or secrets.
+const worker = spawnWorker(8899, ['--test-scheduled']);
 const clients = [];
-async function waitForServer() {
+async function waitForServer(base = origin, child = worker) {
   for (let i = 0; i < 50; i++) {
-    try { const response = await fetch(`${origin}/api/status`, { signal: AbortSignal.timeout(1000) }); if (response.ok) return response; } catch { /* starting */ }
-    if (worker.exitCode !== null) throw new Error(`Worker beendet: ${logs.slice(-3000)}`);
+    try { const response = await fetch(`${base}/api/status`, { signal: AbortSignal.timeout(1000) }); if (response.ok) return response; } catch { /* starting */ }
+    if (child.exitCode !== null) throw new Error(`Worker beendet: ${logs.slice(-3000)}`);
     await new Promise(resolve => setTimeout(resolve, 150));
   }
   throw new Error(`Worker nicht erreichbar: ${logs.slice(-3000)}`);
 }
-async function connect(code, role,ip='127.0.0.1',protocol='2') {
-  const ws = new WebSocket(`${origin.replace('http:', 'ws:')}/api/lobby/${code}?role=${role}&protocol=${protocol}`, { headers: { Origin: origin,'CF-Connecting-IP':ip } });
+async function connect(code, role,ip='127.0.0.1',protocol='2',base=origin) {
+  const ws = new WebSocket(`${base.replace('http:', 'ws:')}/api/lobby/${code}?role=${role}&protocol=${protocol}`, { headers: { Origin: base,'CF-Connecting-IP':ip } });
   clients.push(ws);
   const inbox = [];
   ws.on('message', data => inbox.push(JSON.parse(data.toString())));
   await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
   return { ws, inbox, async next(type) { for (let i = 0; i < 50; i++) { const idx = inbox.findIndex(m => m.type === type); if (idx >= 0) return inbox.splice(idx, 1)[0]; await new Promise(resolve => setTimeout(resolve, 20)); } throw new Error(`Missing ${type}: ${JSON.stringify(inbox)}`); } };
 }
-async function turn(code, member, overrides={}, ip='127.0.0.1', source=origin) {
-  return fetch(`${origin}/api/turn`,{method:'POST',headers:{Origin:source,'Content-Type':'application/json','CF-Connecting-IP':ip},body:JSON.stringify({code,id:member.id,token:member.accessToken,...overrides})});
+async function turn(code, member, overrides={}, ip='127.0.0.1', source=origin, base=origin) {
+  return fetch(`${base}/api/turn`,{method:'POST',headers:{Origin:source,'Content-Type':'application/json','CF-Connecting-IP':ip},body:JSON.stringify({code,id:member.id,token:member.accessToken,...overrides})});
 }
 try {
-  const status = await waitForServer(); assert.deepEqual(await status.json(), { turn: false });
+  const idle = { turn: false, paused: false, reason: null, monitor: 'no-token' };
+  const status = await waitForServer(); assert.deepEqual(await status.json(), idle);
+  // Kostenbremse-Cron ohne CF_ANALYTICS_TOKEN: darf nicht abstürzen und nichts pausieren.
+  const cron = await fetch(`${origin}/__scheduled?cron=${encodeURIComponent('17 * * * *')}`); assert.equal(cron.status, 200, 'Cron-Handler läuft ohne Token');
+  assert.deepEqual(await (await fetch(`${origin}/api/status`)).json(), idle, 'Fehlendes Token pausiert das Spiel nicht');
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const code = Array.from(randomBytes(10), byte => alphabet[byte % alphabet.length]).join('');
   const otherCode = `${code.slice(0, 9)}${alphabet[(alphabet.indexOf(code[9]) + 1) % alphabet.length]}`;
@@ -111,10 +121,20 @@ try {
   assert.equal(denied.inbox.some(m => m.type === 'welcome'), false, 'Rate-Limit darf keinen Lobbyzugang erteilen');
   const stillMissing = await connect(unusedCode, 'GUEST');
   assert.match((await stillMissing.next('error')).message, /Lobby nicht gefunden/, 'Abgelehnter Host hat keine Lobby erstellt');
-  console.log('Cloudflare Worker: 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limits, HTTP-TURN mit aktivem Lobby-Ticket bei unterschiedlichen Netzwerkpfaden, Origin-Prüfung, IP-unabhängiger Cooldown, veraltete Tabs und Isolation geprüft.');
+  // Manueller Not-Aus: separater Worker mit KILL_SWITCH=1 (eigener Zustand).
+  const killDir = await mkdtemp(join(tmpdir(), 'delete-this-kill-')), killOrigin = 'http://127.0.0.1:8898';
+  const killed = spawnWorker(8898, ['--var', 'KILL_SWITCH:1'], killDir);
+  try {
+    assert.deepEqual(await (await waitForServer(killOrigin, killed)).json(), { turn: false, paused: true, reason: 'manual', monitor: 'no-token' });
+    const offHost = await connect(code, 'HOST', '127.0.0.1', '2', killOrigin);
+    assert.match((await offHost.next('error')).message, /vom Betreiber vorübergehend abgeschaltet/);
+    assert.equal(offHost.inbox.some(m => m.type === 'welcome'), false, 'Not-Aus: keine neue Lobby');
+    const offTurn = await turn(code, joined, {}, '127.0.0.1', killOrigin, killOrigin);
+    assert.equal(offTurn.status, 503, 'Not-Aus: kein TURN'); assert.equal((await offTurn.json()).paused, true);
+  } finally { await stopWorker(killed); await rm(killDir, { recursive: true, force: true }); }
+  console.log('Cloudflare Worker: Kostenbremse (Status, Cron ohne Token, Not-Aus), 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limits, HTTP-TURN mit aktivem Lobby-Ticket bei unterschiedlichen Netzwerkpfaden, Origin-Prüfung, IP-unabhängiger Cooldown, veraltete Tabs und Isolation geprüft.');
 } finally {
   for (const ws of clients) ws.close();
-  worker.kill('SIGTERM');
-  await new Promise(resolve => worker.exitCode !== null ? resolve() : worker.once('exit', resolve));
+  await stopWorker(worker);
   await rm(stateDir, { recursive: true, force: true });
 }

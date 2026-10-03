@@ -36,5 +36,5 @@ jobs:
       - run: npm test
       # Build führt Pack-/Customization-Prüfung, Typecheck und Tests erneut aus (wie Cloudflare Workers Builds).
       - run: npm run build
-      # Lokaler Worker (wrangler dev --local) ohne echte TURN-Secrets; erwartet /api/status = {"turn":false}.
+      # Lokaler Worker (wrangler dev --local) ohne echte Secrets; prüft u. a. /api/status, Cron ohne Token und KILL_SWITCH.
       - run: npm run test:worker

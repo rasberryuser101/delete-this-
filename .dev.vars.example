@@ -1,5 +1,22 @@
 TURN_KEY_ID="YOUR_CLOUDFLARE_TURN_KEY_ID"
 TURN_KEY_TOKEN="YOUR_CLOUDFLARE_TURN_KEY_API_TOKEN"
-# Optionaler globaler Stopp für Zugangsausgaben, KEINE GB-/Kostenobergrenze.
-# Standardmäßig nicht setzen. Cloudflare Runtime Variable, kein Secret:
-# TURN_DAILY_LIMIT="12000"
+
+# --- Kostenbremse (Details: docs/BETRIEB.md) ---
+# Secret für die stündliche Prüfung des monatlichen TURN-Verbrauchs.
+# API-Token NUR mit "Account > Account Analytics > Read", nur für dieses Konto.
+# Erstellen: My Profile > API Tokens > Create Token > Create Custom Token.
+# In Produktion: `npx wrangler secret put CF_ANALYTICS_TOKEN` oder Dashboard
+# Workers & Pages > delete-this > Settings > Variables and Secrets (Typ Secret).
+# Fehlt das Token, ist nur die Monats-Automatik aus; das Spiel läuft weiter.
+# Lokal normalerweise NICHT setzen (der Smoke-Test erwartet "monitor":"no-token").
+# CF_ANALYTICS_TOKEN="YOUR_ACCOUNT_ANALYTICS_READ_TOKEN"
+
+# Die folgenden Werte stehen bereits in wrangler.jsonc "vars" (keine Secrets).
+# Hier nur zum lokalen Überschreiben:
+# TURN_DAILY_LIMIT="500"          # max. TURN-Zugangsausgaben pro 24 h, gesamte Installation (KEINE GB-Grenze)
+# TURN_MONTHLY_STOP_GB="950"      # Monatsstopp in GB; 1.000 GB frei, 1 USD = 20 GB darüber; max. 1000
+# CF_ACCOUNT_ID="1d9ff15d990a099917629e78579650c6"
+
+# Not-Aus: "1" = sofort keine neuen Lobbys und kein TURN. In Produktion im
+# Dashboard als Text-Variable setzen (steht absichtlich nicht in wrangler.jsonc).
+# KILL_SWITCH="1"
