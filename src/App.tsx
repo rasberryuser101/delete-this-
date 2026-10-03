@@ -14,7 +14,7 @@ import { Display } from './Display';
 import { RevealStage } from './RevealStage';
 import { Imprint, Privacy, Rules } from './Legal';
 import { AdultConfirm } from './AdultConfirm';
-import { rememberedName, saveName } from './identity';
+import { initialNameChoice, saveName } from './identity';
 import { REACTION_LABELS } from './party';
 import { ReactionBar } from './ReactionBar';
 import { Lobby } from './Lobby';
@@ -27,7 +27,7 @@ function App(){
  const musicProblem=useSyncExternalStore(subscribeMusic,musicStatus);
  const debug=import.meta.env.DEV||new URLSearchParams(location.search).get('debug')==='1';
  const [route,setRoute]=useState(currentRoute),[mute,setMute]=useState(isMuted()),[music,setMusic]=useState(isMusicEnabled());
- const [name,setName]=useState(rememberedName),[rememberName,setRememberName]=useState(()=>!!rememberedName());
+ const [name,setName]=useState(()=>initialNameChoice().name),[rememberName,setRememberName]=useState<boolean>(()=>initialNameChoice().remember);
  const [avatar,setAvatar]=useState(AVATARS[0]??''),[joinCode,setJoinCode]=useState(''),[invitedHostKey,setInvitedHostKey]=useState('');
  const [mode,setMode]=useState<Mode>('PARTY'),[displayOnly,setDisplayOnly]=useState(false),[packs,setPacks]=useState<string[]>(DEFAULT_PACKS),[text,setText]=useState('');
  const [adultRoom,setAdultRoom]=useState(''),[adultAsk,setAdultAsk]=useState('');

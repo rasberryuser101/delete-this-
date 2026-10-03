@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Privacy, Rules } from '../src/Legal';
 import { AdultConfirm } from '../src/AdultConfirm';
 import { DEFAULT_PACKS, PACKS, togglePack, withoutAdult } from '../src/prompts';
-import { NAME_KEY, rememberedName, saveName } from '../src/identity';
+import { initialNameChoice, NAME_KEY, rememberedName, saveName } from '../src/identity';
 import config from '../customization.json';
 
 describe('Rechtstexte und Nutzungsregeln', () => {
@@ -58,5 +58,14 @@ describe('Name merken', () => {
     saveName('  Anna  ', true); expect(rememberedName()).toBe('Anna');
     saveName('Anna', false); expect(rememberedName()).toBe('');
     saveName('x'.repeat(40), true); expect(rememberedName()).toHaveLength(30);
+  });
+  it('startet immer ohne Häkchen, auch wenn schon ein alter Name gespeichert ist (Planet49)', () => {
+    const store = new Map<string, string>([[NAME_KEY, 'Alter Name']]);
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } });
+    const start = initialNameChoice();
+    expect(start).toEqual({ name: 'Alter Name', remember: false });
+    // Spiel erstellen/beitreten ohne aktives Häkchen entfernt den alten Namen.
+    saveName(start.name, start.remember); expect(store.has(NAME_KEY)).toBe(false);
+    store.clear(); expect(initialNameChoice()).toEqual({ name: '', remember: false });
   });
 });

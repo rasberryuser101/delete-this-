@@ -27,6 +27,14 @@ export const NAME_KEY = 'delete-this-name';
 export function rememberedName(): string {
   try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; }
 }
+/**
+ * Start values for the name field. A previously stored name may be prefilled for this
+ * session, but "Name merken" ALWAYS starts unticked (no pre-ticked consent, EuGH C-673/17
+ * Planet49); without an active tick, saveName removes the stored name on create/join.
+ */
+export function initialNameChoice(): { name: string; remember: false } {
+  return { name: rememberedName(), remember: false };
+}
 /** The display name is only stored when the player opts in ("Name merken"). */
 export function saveName(name: string, remember: boolean): void {
   try { if (remember && name.trim()) localStorage.setItem(NAME_KEY, name.trim().slice(0, 30)); else localStorage.removeItem(NAME_KEY); } catch { /* optional */ }
