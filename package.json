@@ -1,11 +1,14 @@
 {
   "name": "delete-this",
   "private": true,
-  "version": "1.0.0",
+  "version": "7.2.1",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "node scripts/check-packs.mjs && node scripts/check-customization.mjs && npm run typecheck && vite build",
+    "build": "node scripts/check-packs.mjs && node scripts/check-customization.mjs && npm run typecheck && npm test && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit && tsc -p worker/tsconfig.json",
     "test": "vitest run",
