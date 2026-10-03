@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { consume, rateRule, TURN_TTL, TURN_COOLDOWN_MS, type Counter } from './limits';
+import { checkTurnEgress, nextState, publicStatus, verdict, manualKill, MANUAL_MESSAGE, PAUSE_MESSAGE, TURN_PAUSE_MESSAGE, type CheckResult, type GuardState, type Verdict } from './costGuard';
 
 type Env = {
   ROOMS: DurableObjectNamespace<Lobby>;
@@ -9,8 +10,15 @@ type Env = {
   ENTRY_LIMIT?: RateLimit;
   TURN_KEY_ID?: string;
   TURN_KEY_TOKEN?: string;
-  /** Optional operator cutoff for credential issues, NOT a GB/cost limit. */
+  /** Operator cutoff for credential issues per 24 h (wrangler.jsonc: "500"), NOT a GB/cost limit. */
   TURN_DAILY_LIMIT?: string;
+  /** "1" = emergency stop: no new lobby connections, no TURN. Set in the dashboard. */
+  KILL_SWITCH?: string;
+  /** Monthly TURN egress stop in GB (default 950, capped at 1000). */
+  TURN_MONTHLY_STOP_GB?: string;
+  /** Secret, API token with only Account Analytics: Read. Optional. */
+  CF_ANALYTICS_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
 };
 type Role = 'HOST' | 'GUEST';
 type Member = { id: string; role: Role; approved: boolean; ip: string; accessToken: string; window: number; count: number; lastTurn?: number };
@@ -21,6 +29,16 @@ const hash = async (value: string) => Array.from(new Uint8Array(await crypto.sub
 const deny = () => new Response('Nicht verfügbar.', { status: 404 });
 const stun = [{ urls: 'stun:stun.cloudflare.com:3478' }];
 const reply = (data: unknown, status = 200) => new Response(json(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+/** Kostenbremse state lives in one RateGate instance; no KV or other products. */
+const costGuard = (env: Env) => env.RATE.get(env.RATE.idFromName('cost-guard'));
+async function guardState(env: Env): Promise<GuardState | undefined> {
+  try { return await costGuard(env).guardState(); } catch { return undefined; /* fail-open; manual switch needs no storage */ }
+}
+async function currentVerdict(env: Env): Promise<Verdict> {
+  if (manualKill(env)) return verdict(undefined, Date.now(), env);
+  return verdict(await guardState(env), Date.now(), env);
+}
+const pausedReply = (v: Verdict) => reply({ error: v.reason === 'manual' ? MANUAL_MESSAGE : TURN_PAUSE_MESSAGE, paused: true, reason: v.reason }, 503);
 /** Bound actual streamed bytes, including requests without Content-Length. */
 async function smallBody(request: Request): Promise<Record<string, unknown> | null> {
   if (!request.headers.get('Content-Type')?.startsWith('application/json') || !request.body) return null;
@@ -39,6 +57,8 @@ async function turnCredentials(request: Request, env: Env, url: URL): Promise<Re
   if (env.ENTRY_LIMIT) try { if (!(await env.ENTRY_LIMIT.limit({ key: `turn:${ip}` })).success) return reply({ error: 'Zu viele Versuche.' }, 429); } catch { /* Durable limit remains authoritative. */ }
   const body = await smallBody(request);
   if (!body || Object.keys(body).some(k => !['code','id','token'].includes(k)) || typeof body.code !== 'string' || !/^[A-HJ-NP-Z2-9]{10}$/.test(body.code) || typeof body.id !== 'string' || !IDENT.test(body.id) || typeof body.token !== 'string' || !/^[\da-f-]{36}$/.test(body.token)) return deny();
+  const paused = await currentVerdict(env);
+  if (paused.paused) return pausedReply(paused);
   const room = env.ROOMS.get(env.ROOMS.idFromName(body.code));
   const ticket = json({ id: body.id, token: body.token });
   const allowed = await room.fetch('https://room.internal/turn-access', { method: 'POST', body: ticket });
@@ -80,7 +100,11 @@ function rejectSocket(message: string): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === '/api/status') return new Response(json({ turn: !!env.TURN_KEY_ID && !!env.TURN_KEY_TOKEN }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    if (url.pathname === '/api/status') {
+      // Minimal and public: no usage numbers, no secrets.
+      const stored = manualKill(env) ? undefined : await guardState(env);
+      return reply({ turn: !!env.TURN_KEY_ID && !!env.TURN_KEY_TOKEN, ...publicStatus(stored, Date.now(), env) });
+    }
     if (url.pathname === '/api/turn') {
       try { return await turnCredentials(request, env, url); } catch { return reply({ error: 'Fotoverbindung derzeit nicht verfügbar.' }, 503); }
     }
@@ -92,6 +116,11 @@ export default {
     // reload instead of waiting for controls that are no longer sent over WS.
     if (url.searchParams.get('protocol') !== '2') return rejectSocket('Diese Spielversion ist veraltet. Bitte die Seite auf beiden Geräten neu laden und eine neue Lobby erstellen.');
     if ((url.searchParams.get('ticket') || '').length > 80) return deny();
+    if (manualKill(env)) return rejectSocket(MANUAL_MESSAGE);
+    // Monthly cost pause: no new lobbies. Existing lobbies (guests, host
+    // reconnect with its ticket) may finish; the Lobby object decides.
+    let monthlyPause = false;
+    if (role === 'HOST') { const v = await currentVerdict(env); monthlyPause = v.paused; }
     const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
     // The Durable Object limiter below is the authoritative fallback. This
     // binding is an extra edge limiter and must never make lobby creation fail
@@ -112,10 +141,17 @@ export default {
       }
       if (!allowed.ok) return rejectSocket('Der Lobby-Dienst ist vorübergehend nicht verfügbar. Bitte später erneut versuchen.');
       const room = env.ROOMS.get(env.ROOMS.idFromName(code));
-      return await room.fetch(new Request(`https://room.internal/join?role=${role}&ticket=${encodeURIComponent(url.searchParams.get('ticket') || '')}&ip=${ipKey}`, request));
+      return await room.fetch(new Request(`https://room.internal/join?role=${role}&ticket=${encodeURIComponent(url.searchParams.get('ticket') || '')}&ip=${ipKey}${monthlyPause ? '&paused=1' : ''}`, request));
     } catch {
       return rejectSocket('Der Lobby-Dienst konnte nicht gestartet werden. Bitte später erneut versuchen oder den Betreiber informieren.');
     }
+  },
+  /** Hourly Cron Trigger: one GraphQL request (I/O), negligible CPU. Never throws. */
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    try {
+      const result = await checkTurnEgress(env, Date.now());
+      await costGuard(env).recordCheck(result, Date.now());
+    } catch { console.warn('Kostenbremse: Prüfung fehlgeschlagen.'); }
   }
 };
 
@@ -137,6 +173,17 @@ export class RateGate extends DurableObject<Env> {
     return new Response(null, { status: 204 });
   }
   async alarm() { await this.ctx.storage.deleteAll(); }
+  /** RPC, only used on the "cost-guard" instance (which never sets alarms). */
+  async guardState(): Promise<GuardState | undefined> { return this.ctx.storage.get<GuardState>('guard'); }
+  async recordCheck(result: CheckResult, now: number): Promise<GuardState> {
+    const prev = await this.ctx.storage.get<GuardState>('guard');
+    const next = nextState(prev, now, result, this.env);
+    await this.ctx.storage.put('guard', next);
+    // Transitions only, without numbers, tokens or IPs.
+    if (next.paused && !(prev?.paused && prev.month === next.month)) console.warn('Kostenbremse: monatliche TURN-Grenze erreicht, neue Lobbys und TURN pausiert bis Monatsende (UTC).');
+    if (next.monitor === 'failing' && prev?.monitor !== 'failing') console.warn('Kostenbremse: Analytics-Abfrage scheitert seit mehreren Stunden; Spiel läuft weiter, TURN_DAILY_LIMIT bleibt aktiv.');
+    return next;
+  }
 }
 
 /** One live room. Only SDP/ICE and approval; no photos or game controls. */
@@ -178,6 +225,8 @@ export class Lobby extends DurableObject<Env> {
       if (this.host()) return rejectSocket('Die Lobby ist bereits geöffnet. Bitte zur bestehenden Lobby zurückkehren.');
       const saved = await this.ctx.storage.get<{ hash: string; created: number }>('host');
       if (saved && Date.now() - saved.created < 8 * 3_600_000 && (!ticket || await hash(ticket) !== saved.hash)) return rejectSocket('Dieser Lobbycode ist bereits vergeben. Bitte eine neue Lobby erstellen.');
+      // Monthly cost pause: only the original host may reopen its own lobby.
+      if (url.searchParams.get('paused') === '1' && !(saved && ticket && await hash(ticket) === saved.hash)) return rejectSocket(PAUSE_MESSAGE);
       if (saved && ticket && await hash(ticket) === saved.hash) hostToken = ticket;
       else { hostToken = `${crypto.randomUUID()}${crypto.randomUUID()}`; await this.ctx.storage.put('host', { hash: await hash(hostToken), created: Date.now() }); await this.ctx.storage.setAlarm(Date.now() + 8 * 3_600_000); }
     } else if (!this.host()) return rejectSocket('Lobby nicht gefunden. Bitte den Link prüfen und den Host bitten, die Lobby geöffnet zu lassen.');

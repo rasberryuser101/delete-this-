@@ -144,6 +144,24 @@ it.each([
   expect(credentials).toHaveBeenCalledTimes(2); // No immediate credential retry loop.
 });
 
+it('zeigt die deutsche Kostenbremse-Meldung bei pausiertem Relay statt eines technischen Fehlers', async () => {
+  const error = 'Fotoverbindung über Relay ist diesen Monat pausiert (Kostenlimit erreicht). Direkte Verbindungen funktionieren weiterhin.';
+  credentials.mockImplementation(async () => new Response(JSON.stringify({ error, paused: true, reason: 'monthly-limit' }), { status: 503 }));
+  vi.stubGlobal('location', { origin: 'https://example.org' });
+  vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+  vi.stubGlobal('document', { addEventListener() {}, removeEventListener() {} });
+  vi.stubGlobal('WebSocket', FakeSocket); vi.stubGlobal('RTCPeerConnection', FakePC);
+  const statuses: string[] = [];
+  const host = new CloudflareLobby({ code: 'ABCDEFGH23', role: 'HOST', authorize: () => {}, onStatus: s => statuses.push(s) }, await makeIdentity('host'));
+  sessions.push(host); await host.start();
+  const guest = new CloudflareLobby({ code: 'ABCDEFGH23', role: 'PLAYER', name: 'Gast', authorize: () => {} }, await makeIdentity('guest'));
+  sessions.push(guest); await guest.start();
+  await vi.waitFor(async () => {
+    expect(await host.session.diagnostics!()).toContain('Kostenbremse aktiv (503)');
+    expect(statuses).toContain(error);
+  });
+});
+
 it('konfiguriert beide Geräte mit erhaltenen Relay-Zugängen und sendet das Ticket nur an den eigenen Worker', async () => {
   const iceServers = [{ urls: 'turns:turn.cloudflare.com:5349?transport=tcp', username: 'temporary-user', credential: 'temporary-secret' }];
   credentials.mockImplementation(async () => new Response(JSON.stringify({ iceServers, expiresIn: 1800 })));
