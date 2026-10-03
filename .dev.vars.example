@@ -1,6 +1,13 @@
 TURN_KEY_ID="YOUR_CLOUDFLARE_TURN_KEY_ID"
 TURN_KEY_TOKEN="YOUR_CLOUDFLARE_TURN_KEY_API_TOKEN"
 
+# Pflicht: geheimer Schlüssel für die HMAC-IP-Kennungen der Missbrauchszähler.
+# Ohne diesen Wert lehnt der Worker neue Lobbys und Beitritte ab (kein fester Ersatzwert).
+# Lokal reicht irgendein Testwert; in Produktion einen eigenen Zufallswert als Secret setzen:
+# `openssl rand -hex 32`, dann Dashboard (Typ Secret) oder `npx wrangler secret put IP_HASH_SALT`.
+# npm run test:worker setzt pro Lauf selbst einen zufälligen Testwert.
+IP_HASH_SALT="nur-lokal-zum-testen-in-produktion-eigenes-secret"
+
 # --- Kostenbremse (Details: docs/BETRIEB.md) ---
 # Secret für die stündliche Prüfung des monatlichen TURN-Verbrauchs.
 # API-Token NUR mit "Account > Account Analytics > Read", nur für dieses Konto.

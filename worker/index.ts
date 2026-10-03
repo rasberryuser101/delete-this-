@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { consume, rateRule, TURN_TTL, TURN_COOLDOWN_MS, type Counter } from './limits';
+import { ipKey as hmacIpKey, IP_SALT_MISSING_MESSAGE } from './ipKey';
 import { checkTurnEgress, nextState, publicStatus, verdict, manualKill, MANUAL_MESSAGE, PAUSE_MESSAGE, TURN_PAUSE_MESSAGE, type CheckResult, type GuardState, type Verdict } from './costGuard';
 
 type Env = {
@@ -19,6 +20,8 @@ type Env = {
   /** Secret, API token with only Account Analytics: Read. Optional. */
   CF_ANALYTICS_TOKEN?: string;
   CF_ACCOUNT_ID?: string;
+  /** Secret for the HMAC-SHA-256 IP keys of the RateGate counters. Required: without it lobbies fail closed. */
+  IP_HASH_SALT?: string;
 };
 type Role = 'HOST' | 'GUEST';
 type Member = { id: string; role: Role; approved: boolean; ip: string; accessToken: string; window: number; count: number; lastTurn?: number };
@@ -132,7 +135,10 @@ export default {
         // Continue with the persistent RateGate limiter below.
       }
     }
-    const ipKey = await hash(`${env.TURN_KEY_TOKEN || 'local-dev'}|${ip}`);
+    // Persistent counters only see an HMAC of the IP with the dedicated secret.
+    // No fixed fallback salt: without IP_HASH_SALT, creating and joining fail closed.
+    const ipKey = await hmacIpKey(env, ip);
+    if (!ipKey) { console.error('IP_HASH_SALT fehlt: neue Lobby-Verbindungen werden abgelehnt.'); return rejectSocket(IP_SALT_MISSING_MESSAGE); }
     try {
       const allowed = await env.RATE.get(env.RATE.idFromName(ipKey)).fetch('https://rate/attempt', { method: 'POST', body: role });
       if (allowed.status === 429) {
@@ -155,7 +161,7 @@ export default {
   }
 };
 
-/** Salted IP hashes only; fixed windows, no photo or game storage. */
+/** HMAC IP keys only; fixed windows, no photo or game storage. */
 export class RateGate extends DurableObject<Env> {
   async fetch(request: Request): Promise<Response> {
     const role = await request.text();
