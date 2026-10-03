@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [cloudflare-migration]
+    branches: [main]
   pull_request:
-    branches: [cloudflare-migration]
+    branches: [main]
 
 permissions:
   contents: read
