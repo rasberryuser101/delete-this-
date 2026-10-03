@@ -86,7 +86,8 @@ try {
   host.ws.send(JSON.stringify({ type: 'route', to: retryWelcome.id, data: { type: 'APPROVED', id: 'guest', role: 'PLAYER' } }));
   assert.equal((await retry.next('route')).data.type, 'APPROVED', 'Neue Anfrage bleibt nach Ablehnung möglich');
   for(let i=0;i<161;i++)retry.ws.send('null');
-  await new Promise(resolve => setTimeout(resolve, 200));
+  // Poll instead of a fixed 200 ms wait: slower CI runners need longer to close.
+  for(let waited=0;retry.ws.readyState!==WebSocket.CLOSED&&waited<3000;waited+=50)await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(retry.ws.readyState, WebSocket.CLOSED, 'Auch ungültige Nachrichten zählen zum Spam-Limit');
   const crowd=[];
   // Separate fixture IP: this capacity test must not consume the IP budget of
