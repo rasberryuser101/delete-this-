@@ -23,3 +23,11 @@ export async function verifyIdentity(key: string, signature: string, text: strin
     return await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'}, publicKey, unhex(signature), new TextEncoder().encode(text));
   } catch { return false; }
 }
+export const NAME_KEY = 'delete-this-name';
+export function rememberedName(): string {
+  try { return localStorage.getItem(NAME_KEY) ?? ''; } catch { return ''; }
+}
+/** The display name is only stored when the player opts in ("Name merken"). */
+export function saveName(name: string, remember: boolean): void {
+  try { if (remember && name.trim()) localStorage.setItem(NAME_KEY, name.trim().slice(0, 30)); else localStorage.removeItem(NAME_KEY); } catch { /* optional */ }
+}

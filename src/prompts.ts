@@ -24,3 +24,10 @@ export function pickPrompt(packs: string[], used: string[], random = Math.random
   const choices = fresh.length ? fresh : pool;
   return choices[Math.min(choices.length - 1, Math.max(0, Math.floor(random() * choices.length)))];
 }
+/** Adult packs need a one-time confirmation per lobby before they are activated. */
+export function togglePack(current: string[], id: string, adultConfirmed: boolean): { packs: string[]; confirm: boolean } {
+  if (current.includes(id)) return { packs: current.filter(p => p !== id), confirm: false };
+  if (PACKS.find(p => p.id === id)?.adult && !adultConfirmed) return { packs: current, confirm: true };
+  return { packs: [...current, id], confirm: false };
+}
+export const withoutAdult = (packs: string[]) => packs.filter(id => !PACKS.find(p => p.id === id)?.adult);

@@ -70,7 +70,7 @@ Direktlink: https://github.com/rasberryuser101/delete-this-/tree/main/public/med
 
 Effekte möglichst kurz: Klick 0,05–0,2 s, Countdown unter 0,5 s, Trommelwirbel ca. 1,5–3 s. Maximal 1 MB und 10 s pro Effekt. Dateien genauso hochladen wie Musik. Vorhandene Effekte werden beim Spielstart vorgeladen; falls ein Effekt vorher ausgelöst wird, erklingt zunächst der lokale Ersatz. Der Mute-Schalter schaltet Musik und Effekte gemeinsam aus.
 
-Kostenlos/„royalty-free“ bedeutet nicht automatisch, dass jede Nutzung oder Weitergabe erlaubt ist. Wähle Dateien, deren Lizenz die Nutzung auf deiner Website **und die öffentliche Bereitstellung im Repository** erlaubt, gegebenenfalls auch kommerziell. Bei Namensnennungspflicht trage einen Nachweis ein (unten). Es wurden keine Stock-Sounds ohne Lizenznachweis eingebaut.
+Kostenlos/„royalty-free“ bedeutet nicht automatisch, dass jede Nutzung oder Weitergabe erlaubt ist. Wähle Dateien, deren Lizenz die Nutzung auf deiner Website **und die öffentliche Bereitstellung im Repository** erlaubt, gegebenenfalls auch kommerziell. Bei Namensnennungspflicht trage einen Nachweis ein (unten). Die drei Musikstücke in `public/media/music/` wurden mit Treblo KI-generiert (Nutzung laut Treblo-Nutzungsbedingungen, Abschnitt 8); die Nachweise stehen in `customization.json` → `credits`. Neue Audio- oder Grafikdateien bitte nur mit dokumentierter Quelle und Lizenz einbauen.
 
 ## Grafiken austauschen
 
