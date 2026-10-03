@@ -11,8 +11,10 @@ const bin = fileURLToPath(new URL('../node_modules/.bin/wrangler', import.meta.u
 const preload = fileURLToPath(new URL('./local-test-network.cjs', import.meta.url));
 const stateDir = await mkdtemp(join(tmpdir(), 'delete-this-worker-'));
 let logs = '';
-const spawnWorker = (port, extra = [], dir = stateDir) => {
-  const child = spawn(bin, ['dev', '--local', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', dir, '--log-level', 'error', ...extra], { env: { ...process.env, NODE_OPTIONS: `--require=${preload}`, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
+// Zufälliger Test-Salt pro Lauf (kein echtes Secret). Ohne IP_HASH_SALT lehnt der Worker Lobbys ab.
+const testSalt = randomBytes(32).toString('hex');
+const spawnWorker = (port, extra = [], dir = stateDir, salt = testSalt) => {
+  const child = spawn(bin, ['dev', '--local', '--ip', '127.0.0.1', '--port', String(port), '--persist-to', dir, '--log-level', 'error', '--var', `IP_HASH_SALT:${salt}`, ...extra], { env: { ...process.env, NODE_OPTIONS: `--require=${preload}`, WRANGLER_SEND_METRICS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const pipe of [child.stdout, child.stderr]) pipe.on('data', data => { logs += data.toString(); });
   return child;
 };
@@ -132,7 +134,20 @@ try {
     const offTurn = await turn(code, joined, {}, '127.0.0.1', killOrigin, killOrigin);
     assert.equal(offTurn.status, 503, 'Not-Aus: kein TURN'); assert.equal((await offTurn.json()).paused, true);
   } finally { await stopWorker(killed); await rm(killDir, { recursive: true, force: true }); }
-  console.log('Cloudflare Worker: Kostenbremse (Status, Cron ohne Token, Not-Aus), 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limits, HTTP-TURN mit aktivem Lobby-Ticket bei unterschiedlichen Netzwerkpfaden, Origin-Prüfung, IP-unabhängiger Cooldown, veraltete Tabs und Isolation geprüft.');
+  // Ohne IP_HASH_SALT: kein fester Ersatz-Salt, Erstellen und Beitreten schlagen mit klarer Meldung fehl.
+  const saltlessDir = await mkdtemp(join(tmpdir(), 'delete-this-nosalt-')), saltlessOrigin = 'http://127.0.0.1:8897';
+  const saltless = spawnWorker(8897, [], saltlessDir, '');
+  try {
+    await waitForServer(saltlessOrigin, saltless);
+    for (const role of ['HOST', 'GUEST']) {
+      const refused = await connect(code, role, '127.0.0.1', '2', saltlessOrigin);
+      assert.match((await refused.next('error')).message, /nicht vollständig eingerichtet/);
+      await new Promise(resolve => setTimeout(resolve, 100));
+      assert.equal(refused.inbox.some(m => m.type === 'welcome'), false, `Ohne IP_HASH_SALT kein Lobbyzugang (${role})`);
+      assert.equal(refused.ws.readyState, WebSocket.CLOSED, 'Abgelehnter Socket wird sofort geschlossen');
+    }
+  } finally { await stopWorker(saltless); await rm(saltlessDir, { recursive: true, force: true }); }
+  console.log('Cloudflare Worker: Kostenbremse (Status, Cron ohne Token, Not-Aus), Abbruch ohne IP_HASH_SALT, 20 Gäste, erneuter Beitritt, Freigabeentzug, Spam-Limits, HTTP-TURN mit aktivem Lobby-Ticket bei unterschiedlichen Netzwerkpfaden, Origin-Prüfung, IP-unabhängiger Cooldown, veraltete Tabs und Isolation geprüft.');
 } finally {
   for (const ws of clients) ws.close();
   await stopWorker(worker);

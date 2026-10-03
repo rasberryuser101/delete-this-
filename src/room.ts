@@ -6,7 +6,7 @@ import { withDeadline, type PhotoAction, type PhotoMetadata } from './transfer';
 import type { RequestAction } from './actions';
 export { parsePhotoMetadata } from './transfer';
 
-export const BUILD = '7.2.1';
+export const BUILD = '7.2.2';
 export const CONNECTION_ERROR = 'Lobby nicht gefunden oder Verbindung fehlgeschlagen. Link prüfen und erneut versuchen.';
 export const NETWORK_ERROR = 'Verbindung fehlgeschlagen. Internet prüfen und erneut versuchen.';
 export const HOST_CONNECTION_ERROR = 'Die Lobby konnte nicht geöffnet werden. Internet-/VPN-/Inhaltsblocker-Einstellungen prüfen und erneut versuchen.';

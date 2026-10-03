@@ -48,5 +48,9 @@
     "trophy": "media/art/trophy.svg",
     "ticket": "media/art/ticket.svg"
   },
-  "credits": []
+  "credits": [
+    { "title": "Lobby-Musik (lobby.mp3)", "author": "KI-generiert mit Treblo", "license": "Nutzung laut Treblo-Nutzungsbedingungen, Abschnitt 8 (Output)", "url": "https://treblo.com/tos" },
+    { "title": "Fotoauswahl-Musik (submit.mp3)", "author": "KI-generiert mit Treblo", "license": "Nutzung laut Treblo-Nutzungsbedingungen, Abschnitt 8 (Output)", "url": "https://treblo.com/tos" },
+    { "title": "Finale-Musik (finale.mp3)", "author": "KI-generiert mit Treblo", "license": "Nutzung laut Treblo-Nutzungsbedingungen, Abschnitt 8 (Output)", "url": "https://treblo.com/tos" }
+  ]
 }

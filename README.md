@@ -1,5 +1,7 @@
 # Delete That!
 
+**7.2.2 – neues Pflicht-Secret `IP_HASH_SALT`:** Vor dem Deploy dieser Version im Cloudflare-Dashboard unter **Workers & Pages → delete-this → Settings → Variables & Secrets** ein Secret `IP_HASH_SALT` mit einem langen Zufallswert anlegen (z. B. Ausgabe von `openssl rand -hex 32`). Ohne dieses Secret lehnt der Worker das Erstellen von Lobbys und das Beitreten mit einer Fehlermeldung ab (siehe unten).
+
 **Verbindungsfix 7.2.1:** Der Relay-Abruf akzeptiert freigegebene Geräte auch dann, wenn HTTP und WebSocket unterschiedliche IP-Adressen verwenden. Zugangsticket, aktive Lobby-Freigabe und Missbrauchslimits bleiben erforderlich. Nach dem Update beide Geräte neu laden und eine neue Lobby erstellen. Alte Tabs bekommen beim Verbindungsaufbau einen klaren Hinweis zum Neuladen.
 
 **Version 7.2:** Optimierter WebRTC-Spielkanal, weniger Foto-Dopplungen, bedarfsgesteuerte Relay-Zugänge und Missbrauchslimits pro Lobby. [Änderungen und Verbrauchsbeispiele](docs/OPTIMIERUNG-7.2.md). 8 Spieler auf eigenen Handys oder 20 am gemeinsamen Bildschirm; Host als reiner Bildschirm; Klassisch, Eigene Prompts, Reverse und konfigurierbarer Mix. Stimmenpunkte, optionaler Siegerbonus, Mehrheits-Skip und frei wählbare Profilbilder. Neue kompakte Lobby, Punkte erst im Finale, acht abschaltbare Reactions mit Sounds und automatische/manuelle Foto-Show als Lobby-Einstellung. **[Einfache Anleitung: Sounds, Grafiken, Einstellungen und GitHub-Dateien verwalten](docs/ANPASSEN.md).** [Einfache Anleitung zu Verbrauch, Dashboard, Sicherheitsgrenzen und Betreiberpflichten](docs/BETRIEB.md).
@@ -30,9 +32,12 @@ Cloudflare bekommt IP-Adressen und Verbindungsmetadaten. Der Worker speichert ku
 3. Nach dem ersten Worker-Deploy unter **Workers & Pages → delete-this → Settings → Variables & Secrets** zwei **Runtime Secrets** anlegen:
    - `TURN_KEY_ID` = deine TURN Key ID
    - `TURN_KEY_TOKEN` = dein TURN Key API Token
+   - `IP_HASH_SALT` = ein langer Zufallswert, z. B. die Ausgabe von `openssl rand -hex 32` (Pflicht, siehe unten)
 4. Speichern und die neue Worker-Version deployen, falls Cloudflare dazu auffordert. `https://<deine-worker-url>/api/status` muss danach `{"turn":true}` zeigen. Das verrät **keinen** Schlüssel, nur ob beide Einträge existieren.
 
 Der Worker fragt Cloudflare bei Bedarf nach 30 Minuten gültigen TURN-Zugangsdaten und gibt diese nur an freigegebene Geräte. Ohne diese beiden Secrets nutzt das Spiel nur den kostenlosen Cloudflare-STUN-Server; besonders iPhone-zu-PC über Mobilfunk kann dann scheitern. Ein eingetragenes Secret allein ist noch kein Beweis für eine funktionierende TURN-Verbindung: den Live-Test unten durchführen.
+
+**Pflicht-Secret `IP_HASH_SALT`:** Für die längerfristigen Missbrauchszähler speichert der Worker nicht die IP-Adresse, sondern nur eine HMAC-SHA-256-Prüfsumme der IP mit diesem geheimen Schlüssel. Fehlt das Secret (oder ist es leer), schlägt das Erstellen und Beitreten von Lobbys absichtlich fehl („Der Lobby-Dienst ist noch nicht vollständig eingerichtet …“); es gibt keinen festen Ersatzwert. Den Wert nur im Dashboard oder per `npx wrangler secret put IP_HASH_SALT` setzen, nie ins Repository. Ein späterer Wechsel des Werts setzt nur die laufenden Missbrauchszähler zurück.
 
 ## GitHub → Cloudflare Workers deployen
 
@@ -42,7 +47,7 @@ Der Worker und die Vite-Dateien werden **in einem Cloudflare-Workers-Projekt** v
 2. Im Cloudflare-Dashboard **Workers & Pages → Create application → Import a repository** wählen, mit GitHub verbinden und dieses Repository auswählen.
 3. Projektnamen auf **`delete-this`** setzen; er muss zum `name` in `wrangler.jsonc` passen. Falls dieser Name bereits vergeben ist: Namen **in `wrangler.jsonc` und im Dashboard identisch** anpassen.
 4. Root directory: Repository-Stamm. Build command: **`npm run build`**. Deploy command: **`npx wrangler deploy`**. Produktionsbranch: **`main`**. Dann **Save and Deploy**.
-5. Die beiden TURN Runtime Secrets wie oben setzen. Danach die **`workers.dev`-URL** auf iPhone und PC öffnen.
+5. Die Runtime Secrets wie oben setzen (`TURN_KEY_ID`, `TURN_KEY_TOKEN`, `IP_HASH_SALT`). Danach die **`workers.dev`-URL** auf iPhone und PC öffnen.
 
 Bei jedem Push auf `main` (auch durch einen gemergten Pull Request) baut Cloudflare Workers Builds neu und veröffentlicht den Worker. `npm run build` führt dabei auch alle Tests (`npm test`) aus: Ein roter Test bricht den Build ab, und Cloudflare veröffentlicht dann **nicht**. Die Node-Version (22) liest Workers Builds aus `.nvmrc`; falls im Dashboard zusätzlich eine Build-Variable `NODE_VERSION` gesetzt ist, sollte sie ebenfalls `22` sein. Im Worker gibt es keine weiteren Konten oder Cloud-Dienste. `dist/` bleibt eine statische Vite-Ausgabe; die Cloudflare-Lobby entsteht erst durch den danebenliegenden Worker. `robots.txt` und `noindex,nofollow` halten die Testversion aus Suchmaschinen, sind aber keine Zugangssperre.
 
@@ -91,7 +96,7 @@ npm run test:worker
 
 GitHub Actions (`.github/workflows/ci.yml`) führt bei jedem Push auf `main` und bei jedem Pull Request dorthin automatisch `npm ci`, Lint, Typecheck, Tests, Build und `npm run test:worker` mit Node 22 aus. Ein roter CI-Lauf vor dem Mergen heißt: nicht mergen.
 
-`npm run test:worker` startet einen **lokalen** Cloudflare Worker und prüft Lobby-Isolation, Freigabe und TURN-Zugang; er benötigt keinen echten Cloudflare-Key. Für einen manuellen lokalen Test optional `.dev.vars.example` nach `.dev.vars` kopieren, eigene Schlüssel dort eintragen (Datei wird ignoriert), dann `npm run dev:worker` ausführen und `http://localhost:8787` öffnen. `npm run dev` startet nur den Vite-Editor und bietet ohne parallel gestarteten Worker keinen Multiplayer.
+`npm run test:worker` startet einen **lokalen** Cloudflare Worker und prüft Lobby-Isolation, Freigabe und TURN-Zugang; er benötigt keinen echten Cloudflare-Key und setzt für jeden Lauf einen zufälligen Test-Wert für `IP_HASH_SALT` (zusätzlich prüft er, dass der Worker ohne dieses Secret Lobbys ablehnt). Für einen manuellen lokalen Test `.dev.vars.example` nach `.dev.vars` kopieren, `IP_HASH_SALT` und optional eigene Schlüssel dort eintragen (Datei wird ignoriert), dann `npm run dev:worker` ausführen und `http://localhost:8787` öffnen. `npm run dev` startet nur den Vite-Editor und bietet ohne parallel gestarteten Worker keinen Multiplayer.
 
 ## Gerätetest nach dem Deploy
 
