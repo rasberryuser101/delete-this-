@@ -44,7 +44,7 @@ Der Worker und die Vite-Dateien werden **in einem Cloudflare-Workers-Projekt** v
 4. Root directory: Repository-Stamm. Build command: **`npm run build`**. Deploy command: **`npx wrangler deploy`**. Produktionsbranch: **`cloudflare-migration`**. Wenn zunächst `main` vorausgewählt ist, vor dem Deploy in den Build-Einstellungen auf `cloudflare-migration` umstellen. Dann **Save and Deploy**.
 5. Die beiden TURN Runtime Secrets wie oben setzen. Danach die neue **`workers.dev`-URL** auf iPhone und PC öffnen. Alte Vercel-Einladungslinks sind mit neuen Cloudflare-Lobbys nicht kompatibel.
 
-Bei Änderungen auf `cloudflare-migration` wird neu gebaut. Im Worker gibt es keine weiteren Konten oder Cloud-Dienste. `dist/` bleibt eine statische Vite-Ausgabe; die Cloudflare-Lobby entsteht erst durch den danebenliegenden Worker. `robots.txt` und `noindex,nofollow` halten die Testversion aus Suchmaschinen, sind aber keine Zugangssperre.
+Bei Änderungen auf `cloudflare-migration` wird neu gebaut. `npm run build` führt dabei auch alle Tests (`npm test`) aus: Ein roter Test bricht den Build ab, und Cloudflare veröffentlicht dann **nicht**. Die Node-Version (22) liest Workers Builds aus `.nvmrc`; falls im Dashboard zusätzlich eine Build-Variable `NODE_VERSION` gesetzt ist, sollte sie ebenfalls `22` sein. Im Worker gibt es keine weiteren Konten oder Cloud-Dienste. `dist/` bleibt eine statische Vite-Ausgabe; die Cloudflare-Lobby entsteht erst durch den danebenliegenden Worker. `robots.txt` und `noindex,nofollow` halten die Testversion aus Suchmaschinen, sind aber keine Zugangssperre.
 
 ## Eigene Prompt-Packs ohne Code ändern
 
@@ -76,6 +76,8 @@ Ab 7.2.1 zeigt die Diagnose bei einem fehlgeschlagenen Zugang auch die Fehlerkla
 
 ## Lokal entwickeln und testen
 
+Benötigt **Node.js 22 oder neuer** (siehe `.nvmrc`, z. B. `nvm use`). Mit Node 20 schlagen einzelne Tests fehl, und `wrangler` setzt Node 22 voraus.
+
 ```sh
 npm install
 npm test
@@ -84,6 +86,8 @@ npm run lint
 npm run build
 npm run test:worker
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) führt bei jedem Push auf `cloudflare-migration` und bei jedem Pull Request dorthin automatisch `npm ci`, Lint, Typecheck, Tests, Build und `npm run test:worker` mit Node 22 aus. Ein roter CI-Lauf vor dem Mergen heißt: nicht mergen.
 
 `npm run test:worker` startet einen **lokalen** Cloudflare Worker und prüft Lobby-Isolation, Freigabe und TURN-Zugang; er benötigt keinen echten Cloudflare-Key. Für einen manuellen lokalen Test optional `.dev.vars.example` nach `.dev.vars` kopieren, eigene Schlüssel dort eintragen (Datei wird ignoriert), dann `npm run dev:worker` ausführen und `http://localhost:8787` öffnen. `npm run dev` startet nur den Vite-Editor und bietet ohne parallel gestarteten Worker keinen Multiplayer.
 

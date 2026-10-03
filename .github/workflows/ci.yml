@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [cloudflare-migration]
+  pull_request:
+    branches: [cloudflare-migration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, Typecheck, Tests, Build, Worker-Smoke-Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      # Build führt Pack-/Customization-Prüfung, Typecheck und Tests erneut aus (wie Cloudflare Workers Builds).
+      - run: npm run build
+      # Lokaler Worker (wrangler dev --local) ohne echte TURN-Secrets; erwartet /api/status = {"turn":false}.
+      - run: npm run test:worker
