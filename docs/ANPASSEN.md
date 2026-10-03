@@ -4,9 +4,9 @@
 
 Öffne immer diesen Link und speichere ihn als Lesezeichen:
 
-**https://github.com/rasberryuser101/delete-this-/tree/cloudflare-migration**
+**https://github.com/rasberryuser101/delete-this-/tree/main**
 
-`cloudflare-migration` ist die Version, aus der Cloudflare deine spielbare Website baut. `main` enthält noch den älteren Stand. Du musst für Sounds, Grafiken oder Packs keinen weiteren Branch erstellen. Beim Speichern **Commit directly to the cloudflare-migration branch** auswählen. Ein „Commit“ ist einfach ein gespeicherter Änderungsschritt. Danach baut Cloudflare automatisch neu. Erst wenn „Workers Builds: delete-this“ erfolgreich ist, beide Spielgeräte neu laden und eine neue Lobby erstellen.
+`main` ist die Version, aus der Cloudflare deine spielbare Website baut. Du musst für Sounds, Grafiken oder Packs keinen weiteren Branch erstellen. Beim Speichern **Commit directly to the main branch** auswählen. Ein „Commit“ ist einfach ein gespeicherter Änderungsschritt. Danach baut Cloudflare automatisch neu. Erst wenn „Workers Builds: delete-this“ erfolgreich ist, beide Spielgeräte neu laden und eine neue Lobby erstellen.
 
 Repo-Name und Worker-Adresse heißen technisch weiterhin `delete-this`. Der sichtbare Spielname ist jetzt **Delete That!**. Das vermeidet kaputte Links und neue Hosting-Konfiguration.
 
@@ -25,7 +25,7 @@ Die Avatare werden aktuell automatisch aus dem Spielernamen zugeordnet; auf alle
 
 ## Musik: am einfachsten MP3 hochladen
 
-Direktlink: https://github.com/rasberryuser101/delete-this-/tree/cloudflare-migration/public/media/music
+Direktlink: https://github.com/rasberryuser101/delete-this-/tree/main/public/media/music
 
 | Dateiname | Wann läuft sie? |
 | --- | --- |
@@ -38,7 +38,7 @@ Es gibt nur diese drei Musikphasen. Präsentation, Voting und Rundenergebnis ver
 1. Benenne die gewünschte MP3 auf deinem Computer entsprechend um, z. B. `lobby.mp3`.
 2. Öffne den **music-Ordner** über den Link oben.
 3. **Add file → Upload files**. Ziehe die Datei hinein. Lade die Datei selbst hoch, keinen zusätzlichen `music`-Ordner.
-4. Nachricht wie „Neue Lobby-Musik“, direkt auf `cloudflare-migration` speichern.
+4. Nachricht wie „Neue Lobby-Musik“, direkt auf `main` speichern.
 5. Nach erfolgreichem Build die Website neu laden und Musik einschalten.
 
 Die Datei wird beim Build erkannt. Du musst dafür keinen Programmcode ändern. Musik bleibt zunächst aus, damit sie nicht ungefragt auf jedem Handy läuft. Bei einer Party reicht es, sie auf dem Host oder einem Display einzuschalten; auf den Gästehandys kann sie ausgeschaltet bleiben. Die Dateien werden direkt gestreamt und die nächsten Tracks nach dem Start im Hintergrund vorbereitet. Fehlt ein Track oder kann er nicht geladen werden, bleibt nur diese Phase stumm.
@@ -49,7 +49,7 @@ MP3 funktioniert gut über Geräte hinweg. WAV und OGG sind ebenfalls konfigurie
 
 ## Soundeffekte
 
-Direktlink: https://github.com/rasberryuser101/delete-this-/tree/cloudflare-migration/public/media/sfx
+Direktlink: https://github.com/rasberryuser101/delete-this-/tree/main/public/media/sfx
 
 | Datei | Einsatz |
 | --- | --- |
@@ -74,7 +74,7 @@ Kostenlos/„royalty-free“ bedeutet nicht automatisch, dass jede Nutzung oder 
 
 ## Grafiken austauschen
 
-Direktlink: https://github.com/rasberryuser101/delete-this-/tree/cloudflare-migration/public/media/art
+Direktlink: https://github.com/rasberryuser101/delete-this-/tree/main/public/media/art
 
 | Platzhalter | Vorschlag für deine Datei |
 | --- | --- |
@@ -95,7 +95,7 @@ Weitere Avatare: einfach eine Datei nach `public/media/art/avatars/` hochladen. 
 
 ## Einstellungen bearbeiten
 
-Direktlink: https://github.com/rasberryuser101/delete-this-/blob/cloudflare-migration/customization.json
+Direktlink: https://github.com/rasberryuser101/delete-this-/blob/main/customization.json
 
 Datei öffnen → Stift **Edit** → Wert ändern → **Commit changes**. Anführungszeichen und Kommas beibehalten. JSON erlaubt keine Kommentare.
 
@@ -121,7 +121,7 @@ Schlechte Konfigurationen stoppen den Build mit einer Fehlermeldung. Die zuletzt
 
 ## Dateien oder ganze Ordner löschen
 
-Auf GitHub den gewünschten **Ordner öffnen**, rechts oben das **…-Menü** → **Delete directory**. Inhalt kontrollieren und den Commit direkt auf `cloudflare-migration` speichern. Für einzelne Dateien: Datei öffnen → **… → Delete file**. Du brauchst Schreibrechte und musst im Repository angemeldet sein.
+Auf GitHub den gewünschten **Ordner öffnen**, rechts oben das **…-Menü** → **Delete directory**. Inhalt kontrollieren und den Commit direkt auf `main` speichern. Für einzelne Dateien: Datei öffnen → **… → Delete file**. Du brauchst Schreibrechte und musst im Repository angemeldet sein.
 
 Ein Ordner verschwindet auch, wenn seine letzte Datei gelöscht ist. Nur neue Dateien hochzuladen entfernt alte Dateien nicht. Löschen verändert den aktuellen Stand; frühere Versionen bleiben in der Git-Historie.
 

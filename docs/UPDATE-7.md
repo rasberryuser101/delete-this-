@@ -37,11 +37,11 @@ Der Host kann getrennte Spieler entfernen. Ein ausdrücklich entfernter Spieler 
 
 ## Eigene Profilbilder
 
-Datei nach `public/media/art/avatars/` hochladen und auf `cloudflare-migration` committen. Nach dem Build erscheint sie automatisch. Beispielsweise `katze.png`, maximal 2 MB, quadratisch. Kein Konfigurationseintrag nötig. 18 SVG-Avatare sind mitgeliefert.
+Datei nach `public/media/art/avatars/` hochladen und auf `main` committen. Nach dem Build erscheint sie automatisch. Beispielsweise `katze.png`, maximal 2 MB, quadratisch. Kein Konfigurationseintrag nötig. 18 SVG-Avatare sind mitgeliefert.
 
 ## Veröffentlichung dieses Pakets
 
-Den Inhalt des Projektordners ins Repository kopieren, nicht noch einmal den äußeren Ordner darin anlegen. Bereits vorhandene MP3s behalten: `public/media/music/lobby.mp3`, `submit.mp3`, `finale.mp3`. Dieses Quellpaket enthält keine persönlichen TURN-Secrets. Bereits im Cloudflare-Worker gesetzte Secrets bleiben dort erhalten. Danach Commit auf dem für Cloudflare eingestellten Branch und Build prüfen. Beide Spielgeräte neu laden und eine neue Lobby erstellen; alte und neue Clients sind nicht kompatibel.
+Den Inhalt des Projektordners ins Repository kopieren, nicht noch einmal den äußeren Ordner darin anlegen. Bereits vorhandene MP3s behalten: `public/media/music/lobby.mp3`, `submit.mp3`, `finale.mp3`. Dieses Quellpaket enthält keine persönlichen TURN-Secrets. Bereits im Cloudflare-Worker gesetzte Secrets bleiben dort erhalten. Danach auf `main` committen und den Build „Workers Builds: delete-this“ prüfen. Beide Spielgeräte neu laden und eine neue Lobby erstellen; alte und neue Clients sind nicht kompatibel.
 
 ## Update 7.1 – Lobby und erweiterte Einstellungen
 
